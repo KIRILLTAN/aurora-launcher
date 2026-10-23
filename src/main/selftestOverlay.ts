@@ -137,6 +137,13 @@ export async function overlaySelfTest(acc: Account, outDir: string, log: Log): P
   })
   if (!ok) return
   saveInstance({ ...getInstance(world.id), gameArgs: '--quickPlaySingleplayer world', width: 1280, height: 720 })
+  // без экрана первичной настройки (доступность), иначе Quick Play не стартует
+  fs.writeFileSync(path.join(gameDir(world.id), 'options.txt'), 'onboardAccessibility:false
+joinedFirstServer:true
+skipMultiplayerWarning:true
+tutorialStep:none
+renderDistance:6
+')
   await launchInstance(world.id, acc.id)
   const inGame = await waitFor(() => {
     const d = overlayDiagnostics().find((x) => x.instance === world.id)
@@ -144,6 +151,7 @@ export async function overlaySelfTest(acc: Account, outDir: string, log: Log): P
     return last?.inGame && (last.loot?.length || 0) > 0 ? d : null
   }, 300000)
   if (!inGame) {
+    screenshot(path.join(outDir, 'overlay-world-fail.png'))
     log('overlay-world', 'игрок не появился в мире или лут не виден: ' + JSON.stringify(overlayDiagnostics().find((x) => x.instance === world.id)?.last || null).slice(0, 600))
   } else {
     await wait(8000)
