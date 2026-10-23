@@ -108,7 +108,7 @@ export async function installVersion(id: string, task?: TaskHandle, gameDir?: st
   if (v.assetIndex) {
     const idxFile = path.join(dirs.assets(), 'indexes', `${v.assetIndex.id}.json`)
     const idxItem = { url: v.assetIndex.url, path: idxFile, sha1: v.assetIndex.sha1, size: v.assetIndex.size }
-    if (!isPresent(idxItem)) await downloadFile(idxItem)
+    if (!isPresent(idxItem)) await downloadFile(idxItem, undefined, 3, task?.signal)
     assetIndex = JSON.parse(fs.readFileSync(idxFile, 'utf8')) as AssetIndex
     for (const obj of Object.values(assetIndex.objects)) {
       const sub = obj.hash.slice(0, 2)
@@ -129,6 +129,7 @@ export async function installVersion(id: string, task?: TaskHandle, gameDir?: st
 
   await downloadAll(items, {
     concurrency: getSettings().concurrency,
+    signal: task?.signal,
     onProgress: (done, total) => task?.update(0.05 + 0.9 * (total ? done / total : 1), `Загрузка файлов: ${done}/${total}`)
   })
 

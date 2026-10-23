@@ -5,7 +5,7 @@ import type { Instance, LoaderType } from '@shared/types'
 import { dirs, getSettings } from '../settings'
 import { downloadAll, downloadFile, type DownloadItem } from '../util/net'
 import { safeJoin, ensureDir } from '../util/store'
-import { withTask, type TaskHandle } from '../events'
+import { withTask, withCancellableTask, type TaskHandle } from "../events"
 import { createInstance, gameDir, deleteInstance, getInstance } from '../instances'
 import { ensureInstalled } from '../minecraft/launch'
 import { modrinthVersions, getModrinthVersion, getModrinthProject, type MrVersion } from './modrinth'
@@ -64,6 +64,7 @@ async function installMrpack(file: string, task: TaskHandle, meta: Partial<Insta
       .map((f) => ({ url: f.downloads[0], mirrors: f.downloads.slice(1), path: safeJoin(gdir, f.path), sha1: f.hashes.sha1, size: f.fileSize }))
     await downloadAll(items, {
       concurrency: getSettings().concurrency,
+      signal: task.signal,
       onProgress: (d, t) => task.update(0.05 + 0.4 * (t ? d / t : 1), `Моды и ресурсы: ${d}/${t}`)
     })
     extractDir(zip, 'overrides', gdir)
@@ -113,6 +114,7 @@ async function installCfZip(file: string, task: TaskHandle, meta: Partial<Instan
     }))
     await downloadAll(items, {
       concurrency: getSettings().concurrency,
+      signal: task.signal,
       onProgress: (d, t) => task.update(0.05 + 0.4 * (t ? d / t : 1), `Моды: ${d}/${t}`)
     })
     extractDir(zip, man.overrides || 'overrides', gdir)
@@ -127,7 +129,7 @@ async function installCfZip(file: string, task: TaskHandle, meta: Partial<Instan
 
 /** Импорт сборки из файла: .mrpack (Modrinth) или .zip (CurseForge / архив Aurora/Prism). */
 export function importPackFile(file: string): Promise<Instance> {
-  return withTask(`Импорт ${path.basename(file)}`, (t) => {
+  return withCancellableTask(`Импорт ${path.basename(file)}`, (t) => {
     const zip = new AdmZip(file)
     if (zip.getEntry('modrinth.index.json')) return installMrpack(file, t)
     if (zip.getEntry('manifest.json')) return installCfZip(file, t)
@@ -136,14 +138,14 @@ export function importPackFile(file: string): Promise<Instance> {
 }
 
 export function installModrinthPack(projectId: string, versionId?: string): Promise<Instance> {
-  return withTask('Установка сборки Modrinth', async (t) => {
+  return withCancellableTask("Установка сборки Modrinth", async (t) => {
     const project = await getModrinthProject(projectId)
     t.detail(project.title)
     const v: MrVersion = versionId ? await getModrinthVersion(versionId) : (await modrinthVersions(projectId))[0]
     if (!v) throw new Error('У сборки нет версий')
     const f = v.files.find((x) => x.primary) || v.files[0]
     const file = path.join(dirs.cache(), 'packs', f.filename)
-    await downloadFile({ url: f.url, path: file, sha1: f.hashes.sha1 }, undefined)
+    await downloadFile({ url: f.url, path: file, sha1: f.hashes.sha1 }, undefined, 3, t.signal)
     const inst = await installMrpack(file, t, {
       name: project.title,
       icon: project.icon_url,
@@ -155,14 +157,14 @@ export function installModrinthPack(projectId: string, versionId?: string): Prom
 }
 
 export function installCurseforgePack(projectId: string, fileId?: string): Promise<Instance> {
-  return withTask('Установка сборки CurseForge', async (t) => {
+  return withCancellableTask("Установка сборки CurseForge", async (t) => {
     const mod = (await cfGet<{ data: { name: string; logo?: { thumbnailUrl: string }; latestFiles: CfFile[] } }>(`/mods/${projectId}`)).data
     t.detail(mod.name)
     const f = fileId
       ? (await cfGet<{ data: CfFile }>(`/mods/${projectId}/files/${fileId}`)).data
       : [...mod.latestFiles].sort((a, b) => +new Date(b.fileDate) - +new Date(a.fileDate))[0]
     const file = path.join(dirs.cache(), 'packs', f.fileName)
-    await downloadFile({ url: cfDownloadUrl(f), path: file, sha1: cfSha1(f) })
+    await downloadFile({ url: cfDownloadUrl(f), path: file, sha1: cfSha1(f) }, undefined, 3, t.signal)
     const inst = await installCfZip(file, t, {
       name: mod.name,
       icon: mod.logo?.thumbnailUrl,
@@ -175,10 +177,11 @@ export function installCurseforgePack(projectId: string, fileId?: string): Promi
 
 /** Сборка по прямой ссылке (например, .mrpack из релизов GitHub). */
 export function installPackFromUrl(url: string, name?: string): Promise<Instance> {
-  return withTask(`Скачивание ${name || 'сборки'}`, async (t) => {
+  return withCancellableTask(`Скачивание ${name || "сборки"}`, async (t) => {
     const fname = decodeURIComponent(new URL(url).pathname.split('/').pop() || 'pack.mrpack')
     const file = path.join(dirs.cache(), 'packs', fname)
-    await downloadFile({ url, path: file }, (n) => t.detail(`Скачано ${(n / 1048576).toFixed(1)} МБ`))
+    let got = 0
+    await downloadFile({ url, path: file }, (n) => { got += n; t.update(0.02, `Скачано ${(got / 1048576).toFixed(1)} МБ`) }, 3, t.signal)
     const zip = new AdmZip(file)
     const meta: Partial<Instance> = { name, source: { type: 'github', name } }
     const inst = zip.getEntry('modrinth.index.json') ? await installMrpack(file, t, meta) : await installCfZip(file, t, meta)

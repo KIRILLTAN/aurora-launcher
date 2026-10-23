@@ -18,7 +18,8 @@ import type {
   ServerStatus,
   ModUpdate,
   WorldInfo,
-  ScreenshotInfo
+  ScreenshotInfo,
+  ImportPreview
 } from '@shared/types'
 
 const call = <T,>(channel: string, ...args: unknown[]): Promise<T> => window.aurora.invoke(channel, ...args) as Promise<T>
@@ -36,7 +37,6 @@ export interface SavedSkin {
 export const api = {
   appInfo: () => call<{ version: string; platform: string; arch: string; dataDir: string; totalMem: number }>('app:info'),
   minimize: () => call('win:minimize'),
-  maximize: () => call('win:maximize'),
   close: () => call('win:close'),
   openPath: (p: string) => call('shell:openPath', p),
   openUrl: (url: string) => call('shell:openUrl', url),
@@ -81,6 +81,9 @@ export const api = {
     call<string[]>('catalog:installProject', source, instanceId, projectId, type, versionId),
   importFile: (file: string) => call<Instance>('catalog:importFile', file),
   installUrl: (url: string, name?: string) => call<Instance>('catalog:installUrl', url, name),
+  importInspect: (file: string) => call<ImportPreview>('import:inspect', file),
+  importRun: (file: string, opts?: { name: string; mcVersion: string; loader: LoaderType; loaderVersion?: string }) => call<Instance>('import:run', file, opts),
+  cancelTask: (id: string) => call('task:cancel', id),
 
   accounts: () => call<Account[]>('accounts:list'),
   addOffline: (name: string) => call<Account>('accounts:addOffline', name),

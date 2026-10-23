@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { spawn } from 'child_process'
 import AdmZip from 'adm-zip'
+import { CancelledError } from "../util/cancel"
 import type { LoaderType, LoaderVersion } from '@shared/types'
 import { dirs, getSettings } from '../settings'
 import { fetchJson, fetchText, downloadFile, downloadAll, type DownloadItem } from '../util/net'
@@ -98,7 +99,7 @@ export async function installLoader(
         ? `${NEO_MAVEN}/net/neoforged/forge/${ver}/forge-${ver}-installer.jar`
         : `${NEO_MAVEN}/net/neoforged/neoforge/${ver}/neoforge-${ver}-installer.jar`
   const installer = path.join(dirs.cache(), 'installers', path.basename(installerUrl))
-  if (!exists(installer)) await downloadFile({ url: installerUrl, path: installer })
+  if (!exists(installer)) await downloadFile({ url: installerUrl, path: installer }, undefined, 3, task?.signal)
   return installForgeLike(installer, mc, javaPath, task)
 }
 
@@ -162,6 +163,7 @@ async function installForgeLike(installer: string, mc: string, javaPath: () => P
   }
   await downloadAll(items, {
     concurrency: getSettings().concurrency,
+    signal: task?.signal,
     onProgress: (d, t) => task?.update(0.5 + 0.2 * (t ? d / t : 1), `Библиотеки загрузчика: ${d}/${t}`)
   })
 
@@ -204,7 +206,7 @@ async function installForgeLike(installer: string, mc: string, javaPath: () => P
     if (!mainClass) throw new Error(`Не найден Main-Class в ${p.jar}`)
     const cp = [jar, ...p.classpath.map((c) => libraryPath(mavenPath(c)))].join(path.delimiter)
     const args = p.args.map(resolveArg)
-    await runJava(java, ['-cp', cp, mainClass, ...args])
+    await runJava(java, ["-cp", cp, mainClass, ...args], task?.signal)
   }
   fs.rmSync(tmp, { recursive: true, force: true })
   await installVersion(version.id, task)
@@ -220,14 +222,15 @@ function readMainClass(jar: string): string | null {
   }
 }
 
-function runJava(java: string, args: string[]): Promise<void> {
+function runJava(java: string, args: string[], signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     const proc = spawn(java, args, { cwd: dirs.root(), windowsHide: true })
+    signal?.addEventListener("abort", () => proc.kill(), { once: true })
     let out = ''
     proc.stdout.on('data', (d) => (out = (out + d).slice(-4000)))
     proc.stderr.on('data', (d) => (out = (out + d).slice(-4000)))
     proc.on('error', reject)
-    proc.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`Процессор установщика завершился с кодом ${code}:\n${out}`))))
+    proc.on('close', (code) => (code === 0 ? resolve() : signal?.aborted ? reject(new CancelledError()) : reject(new Error(`Процессор установщика завершился с кодом ${code}:\n${out}`))))
   })
 }
 

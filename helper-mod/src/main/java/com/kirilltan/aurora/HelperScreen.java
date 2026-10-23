@@ -21,7 +21,7 @@ public class HelperScreen extends Screen {
         HelperConfig c = HelperConfig.INSTANCE;
         int w = 220;
         int x = this.width / 2 - w / 2;
-        int y = this.height / 2 - 100;
+        int y = this.height / 2 - 92;
         toggle(x, y, w, "Лут на земле", () -> c.loot, v -> c.loot = v);
         addDrawableChild(ButtonWidget.builder(Text.literal("Радиус поиска: " + c.radius + " блоков"), b -> {
             int i = 0;
@@ -36,12 +36,14 @@ public class HelperScreen extends Screen {
         toggle(x + w / 2 + 2, y + 72, w / 2 - 2, "FPS", () -> c.fps, v -> c.fps = v);
         toggle(x, y + 96, w / 2 - 2, "Часы", () -> c.clock, v -> c.clock = v);
         toggle(x + w / 2 + 2, y + 96, w / 2 - 2, "Справа", () -> c.rightSide, v -> c.rightSide = v);
+        toggle(x, y + 120, w / 2 - 2, "Броня", () -> c.armorHud, v -> c.armorHud = v);
+        toggle(x + w / 2 + 2, y + 120, w / 2 - 2, "Щит/лев. рука", () -> c.offhandHud, v -> c.offhandHud = v);
         addDrawableChild(ButtonWidget.builder(Text.literal("Строк в списке: " + c.maxLines), b -> {
             c.maxLines = c.maxLines >= 16 ? 4 : c.maxLines + 4;
             b.setMessage(Text.literal("Строк в списке: " + c.maxLines));
             HelperConfig.save();
-        }).dimensions(x, y + 120, w, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Готово"), b -> close()).dimensions(x, y + 152, w, 20).build());
+        }).dimensions(x, y + 144, w, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Готово"), b -> close()).dimensions(x, y + 176, w, 20).build());
     }
 
     private void toggle(int x, int y, int w, String label, Supplier<Boolean> get, Consumer<Boolean> set) {
@@ -61,8 +63,8 @@ public class HelperScreen extends Screen {
         ctx.fill(0, 0, this.width, this.height, 0x88050816);
         int w = 240;
         int x = this.width / 2 - w / 2;
-        int y = this.height / 2 - 130;
-        ctx.fill(x, y, x + w, y + 312, 0xE00E1330);
+        int y = this.height / 2 - 92 - 34;
+        ctx.fill(x, y, x + w, y + 34 + 176 + 30, 0xE00E1330);
         ctx.fill(x, y, x + w, y + 2, 0xFF38C6FF);
         ctx.drawCenteredTextWithShadow(this.textRenderer, "✦ Aurora Helper ✦", this.width / 2, y + 10, 0xFF38C6FF);
         ctx.drawCenteredTextWithShadow(this.textRenderer, "F6 — открыть/закрыть", this.width / 2, y + 21, 0xFF8B93B8);

@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
-import { Plus, Play, Square, Search, Boxes, Upload, Cloud } from 'lucide-react'
+import { Plus, Play, Square, Search, Boxes, Upload, Cloud, FolderInput } from 'lucide-react'
 import type { LoaderType } from '@shared/types'
 import { api } from '../api'
 import { useStore } from '../store'
 import { InstanceIcon, loaderLabel, timeAgo, LOADERS } from '../components/ui'
 import { PullButton } from '../components/Cloud'
+import { beginImport } from '../dialogs/Import'
 
 export default function LibraryPage() {
   const { instances, running, play, go, setCreateOpen, toast, cloud } = useStore()
@@ -21,16 +22,7 @@ export default function LibraryPage() {
   const onDrop = async (e: React.DragEvent): Promise<void> => {
     e.preventDefault()
     setOver(false)
-    for (const f of Array.from(e.dataTransfer.files)) {
-      const p = api.pathForFile(f)
-      if (!/\.(mrpack|zip)$/i.test(p)) continue
-      try {
-        const inst = await api.importFile(p)
-        toast(`Импортирована сборка «${inst.name}»`, 'success')
-      } catch (err) {
-        toast((err as Error).message, 'error')
-      }
-    }
+    for (const f of Array.from(e.dataTransfer.files)) await beginImport(api.pathForFile(f))
   }
 
   return (
@@ -38,14 +30,20 @@ export default function LibraryPage() {
       <div className="page-header">
         <div>
           <h1>Мои сборки</h1>
-          <p>Перетащите .mrpack или .zip сюда, чтобы импортировать</p>
+          <p>Перетащите сюда архив или папку сборки — из Prism, MultiMC, CurseForge, TLauncher, .mrpack</p>
         </div>
         <div className="actions">
           <button className="btn" onClick={async () => {
-            const [file] = await api.openFile([{ name: 'Сборки', extensions: ['mrpack', 'zip'] }])
-            if (file) api.importFile(file).then((i) => toast(`Импортирована «${i.name}»`, 'success')).catch((e) => toast(e.message, 'error'))
+            const [file] = await api.openFile([{ name: 'Сборки', extensions: ['zip', 'mrpack'] }])
+            if (file) beginImport(file)
           }}>
-            <Upload size={16} /> Импорт
+            <Upload size={16} /> Импорт архива
+          </button>
+          <button className="btn" onClick={async () => {
+            const dir = await api.openDir()
+            if (dir) beginImport(dir)
+          }}>
+            <FolderInput size={16} /> Импорт папки
           </button>
           <button className="btn primary" onClick={() => setCreateOpen(true)}>
             <Plus size={16} /> Создать сборку
@@ -68,7 +66,7 @@ export default function LibraryPage() {
         </div>
       </div>
 
-      {over && <div className="drop-zone over" style={{ marginBottom: 16 }}>Отпустите файл для импорта сборки</div>}
+      {over && <div className="drop-zone over" style={{ marginBottom: 16 }}>Отпустите архив или папку для импорта сборки</div>}
 
       {instances.length === 0 ? (
         <div className="empty">

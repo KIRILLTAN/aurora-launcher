@@ -110,25 +110,30 @@ export async function detectJavas(): Promise<JavaInstall[]> {
 
   const results: JavaInstall[] = []
   const seenReal = new Set<string>()
+  // не больше 4 проверок одновременно — иначе при старте запускаются десятки процессов java
+  const queue = [...candidates]
+  const probeOne = async (c: string): Promise<void> => {
+    if (!exists(c)) return
+    let real = c
+    try {
+      real = fs.realpathSync(c)
+    } catch {
+      /* ignore */
+    }
+    if (seenReal.has(real.toLowerCase())) return
+    seenReal.add(real.toLowerCase())
+    const info = await probeJava(c)
+    if (!info) return
+    const source: JavaInstall['source'] = c.startsWith(path.resolve(dirs.java()))
+      ? 'aurora'
+      : store.manual.some((m) => path.resolve(m) === c)
+        ? 'manual'
+        : 'detected'
+    results.push({ ...info, source })
+  }
   await Promise.all(
-    [...candidates].map(async (c) => {
-      if (!exists(c)) return
-      let real = c
-      try {
-        real = fs.realpathSync(c)
-      } catch {
-        /* ignore */
-      }
-      if (seenReal.has(real.toLowerCase())) return
-      seenReal.add(real.toLowerCase())
-      const info = await probeJava(c)
-      if (!info) return
-      const source: JavaInstall['source'] = c.startsWith(path.resolve(dirs.java()))
-        ? 'aurora'
-        : store.manual.some((m) => path.resolve(m) === c)
-          ? 'manual'
-          : 'detected'
-      results.push({ ...info, source })
+    Array.from({ length: 4 }, async () => {
+      for (let c = queue.shift(); c; c = queue.shift()) await probeOne(c)
     })
   )
   results.sort((a, b) => b.major - a.major || a.path.localeCompare(b.path))
@@ -252,7 +257,7 @@ export async function installJava(major: number, task?: TaskHandle, imageType: '
   await downloadFile({ url: pkg.link, path: archive, size: pkg.size }, (n) => {
     downloaded += n
     task?.update(0.02 + 0.8 * (downloaded / pkg.size), `Скачивание ${asset.release_name}: ${(downloaded / 1048576).toFixed(0)} / ${(pkg.size / 1048576).toFixed(0)} МБ`)
-  })
+  }, 3, task?.signal)
   const dest = ensureDir(path.join(dirs.java(), `${asset.binary.image_type}-${major}-${asset.release_name}`))
   task?.update(0.85, 'Распаковка')
   if (pkg.name.endsWith('.zip')) {

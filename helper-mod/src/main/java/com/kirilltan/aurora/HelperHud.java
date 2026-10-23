@@ -4,8 +4,10 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.ItemEntity;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
 import net.minecraft.util.math.MathHelper;
 
 import java.util.ArrayList;
@@ -30,6 +32,7 @@ public final class HelperHud {
         if (player == null || mc.world == null || mc.options.hudHidden) return;
         if (mc.currentScreen instanceof HelperScreen) return;
         TextRenderer font = mc.textRenderer;
+        renderEquipment(ctx, mc, player, font, cfg);
 
         List<String> info = new ArrayList<>();
         if (cfg.coords) {
@@ -85,6 +88,68 @@ public final class HelperHud {
             ctx.drawTextWithShadow(font, rows.get(i), tx, cy + (cfg.icons ? 4 : 0), color);
             cy += lineH;
         }
+    }
+
+    private static final EquipmentSlot[] ARMOR = {EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET};
+
+    /** Броня — справа от хотбара, щит/предмет левой руки — слева. */
+    private static void renderEquipment(DrawContext ctx, MinecraftClient mc, ClientPlayerEntity player, TextRenderer font, HelperConfig cfg) {
+        if (player.isSpectator()) return;
+        int cx = ctx.getScaledWindowWidth() / 2;
+        int bottom = ctx.getScaledWindowHeight() - 4;
+
+        if (cfg.armorHud) {
+            List<ItemStack> armor = new ArrayList<>();
+            for (EquipmentSlot slot : ARMOR) {
+                ItemStack st = player.getEquippedStack(slot);
+                if (!st.isEmpty()) armor.add(st);
+            }
+            int x = cx + 91 + 8;
+            int y = bottom - armor.size() * 18;
+            if (!armor.isEmpty()) {
+                int w = 0;
+                for (ItemStack st : armor) w = Math.max(w, font.getWidth(durabilityText(st)));
+                ctx.fill(x - 2, y - 2, x + 20 + w + 4, bottom + 1, PANEL_BG);
+            }
+            for (ItemStack st : armor) {
+                ctx.drawItem(st, x, y);
+                ctx.drawItemInSlot(font, st, x, y);
+                ctx.drawTextWithShadow(font, durabilityText(st), x + 20, y + 5, durabilityColor(st));
+                y += 18;
+            }
+        }
+
+        if (cfg.offhandHud) {
+            ItemStack off = player.getOffHandStack();
+            if (!off.isEmpty()) {
+                boolean shield = off.isOf(Items.SHIELD);
+                String label = shield ? "Щит" : off.getName().getString();
+                String value = off.isDamageable() ? durabilityText(off) : (off.getCount() > 1 ? "×" + off.getCount() : "");
+                int tw = Math.max(font.getWidth(label), font.getWidth(value));
+                // левее штатного слота второй руки
+                int iconX = cx - 91 - 29 - 6 - 18;
+                int y = bottom - 20;
+                int left = iconX - tw - 6;
+                ctx.fill(left - 2, y - 2, iconX + 18, bottom + 1, PANEL_BG);
+                ctx.drawItem(off, iconX, y + 1);
+                ctx.drawItemInSlot(font, off, iconX, y + 1);
+                ctx.drawTextWithShadow(font, label, iconX - 4 - font.getWidth(label), y, shield ? ACCENT : 0xFFFFFFFF);
+                if (!value.isEmpty()) ctx.drawTextWithShadow(font, value, iconX - 4 - font.getWidth(value), y + 10, off.isDamageable() ? durabilityColor(off) : 0xFFB8BEDC);
+            }
+        }
+    }
+
+    private static String durabilityText(ItemStack st) {
+        if (!st.isDamageable()) return st.getCount() > 1 ? "×" + st.getCount() : "";
+        return (st.getMaxDamage() - st.getDamage()) + "/" + st.getMaxDamage();
+    }
+
+    private static int durabilityColor(ItemStack st) {
+        if (!st.isDamageable()) return 0xFFE8ECFF;
+        float left = 1f - (float) st.getDamage() / st.getMaxDamage();
+        if (left > 0.6f) return 0xFF6EF0A6;
+        if (left > 0.3f) return 0xFFFFD86B;
+        return 0xFFFF6B81;
     }
 
     private static List<Group> collectLoot(ClientPlayerEntity player, HelperConfig cfg) {

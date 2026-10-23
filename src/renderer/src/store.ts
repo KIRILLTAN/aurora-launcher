@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Account, CrashAnalysis, Instance, Task, UpdateStatus, GameLog, SyncStatus, SyncRemoteInstance } from '@shared/types'
+import type { Account, CrashAnalysis, Instance, Task, UpdateStatus, GameLog, SyncStatus, SyncRemoteInstance, ImportPreview } from '@shared/types'
 import { api, type PublicSettings } from './api'
 
 export type Page = 'home' | 'library' | 'instance' | 'catalog' | 'accounts' | 'java' | 'skins' | 'settings'
@@ -16,13 +16,12 @@ interface State {
   settings?: PublicSettings
   accounts: Account[]
   instances: Instance[]
-  tasks: Task[]
   running: string[]
-  logs: Record<string, GameLog[]>
   crash?: CrashAnalysis & { java?: string }
   update: UpdateStatus
   toasts: Toast[]
   createOpen: boolean
+  importing?: ImportPreview
   sync?: SyncStatus
   cloud: SyncRemoteInstance[]
   refreshCloud: () => Promise<void>
@@ -44,9 +43,7 @@ export const useStore = create<State>((set, get) => ({
   page: 'home',
   accounts: [],
   instances: [],
-  tasks: [],
   running: [],
-  logs: {},
   update: { state: 'idle' },
   toasts: [],
   createOpen: false,
@@ -73,18 +70,18 @@ export const useStore = create<State>((set, get) => ({
     ])
     set({ settings, accounts, instances, running, update })
     void get().refreshCloud()
-    document.documentElement.dataset.accent = settings.accent
+    applyTheme(settings)
   },
   refreshInstances: async () => set({ instances: await api.instances() }),
   refreshAccounts: async () => set({ accounts: await api.accounts(), settings: await api.settings() }),
   setSettings: (settings) => {
     set({ settings })
-    document.documentElement.dataset.accent = settings.accent
+    applyTheme(settings)
   },
 
   toast: (text, kind = 'info') => {
     const id = ++toastId
-    set({ toasts: [...get().toasts, { id, kind, text }] })
+    set({ toasts: [...get().toasts, { id, kind, text }].slice(-5) })
     setTimeout(() => get().dismissToast(id), kind === 'error' ? 8000 : 4000)
   },
   dismissToast: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) }),
@@ -99,14 +96,49 @@ export const useStore = create<State>((set, get) => ({
       set({ page: 'accounts' })
       return
     }
-    set({ logs: { ...get().logs, [instanceId]: [] } })
+    useLogs.getState().clear(instanceId)
     try {
       await api.launch(instanceId, acc, server)
     } catch (e) {
-      toast((e as Error).message, 'error')
+      const msg = (e as Error).message
+      if (msg !== 'Отменено') toast(msg, 'error')
     }
   }
 }))
+
+function applyTheme(s: PublicSettings): void {
+  const root = document.documentElement
+  root.dataset.accent = s.accent
+  root.classList.toggle('reduced-effects', s.animations === 'reduced')
+}
+
+/** Задачи вынесены отдельно: частые обновления прогресса не перерисовывают страницы. */
+export const useTasks = create<{ tasks: Task[] }>(() => ({ tasks: [] }))
+
+/** Логи игры: копятся в буфере и отрисовываются пачками, а не на каждую строку. */
+interface LogState {
+  logs: Record<string, GameLog[]>
+  clear: (id: string) => void
+}
+export const useLogs = create<LogState>((set, get) => ({
+  logs: {},
+  clear: (id) => set({ logs: { ...get().logs, [id]: [] } })
+}))
+
+const pending: GameLog[] = []
+let flushTimer: ReturnType<typeof setTimeout> | null = null
+function flushLogs(): void {
+  flushTimer = null
+  if (!pending.length) return
+  const logs = { ...useLogs.getState().logs }
+  for (const l of pending.splice(0)) {
+    const arr = logs[l.instanceId] ? logs[l.instanceId].slice() : []
+    arr.push(l)
+    logs[l.instanceId] = arr
+  }
+  for (const k of Object.keys(logs)) if (logs[k].length > 3000) logs[k] = logs[k].slice(-3000)
+  useLogs.setState({ logs })
+}
 
 // доступ к состоянию для самопроверки в CI
 ;(window as unknown as { __aurora: typeof useStore }).__aurora = useStore
@@ -114,24 +146,27 @@ export const useStore = create<State>((set, get) => ({
 /** Подписка на события main-процесса. Вызывается один раз при старте. */
 export function bindEvents(): () => void {
   const s = useStore
+  const setRunning = (running: string[]): void => {
+    s.setState({ running })
+    document.documentElement.classList.toggle('game-running', running.length > 0)
+  }
   const offs = [
     api.on<Task>('task:update', (t) => {
-      const tasks = s.getState().tasks.filter((x) => x.id !== t.id)
+      const tasks = useTasks.getState().tasks.filter((x) => x.id !== t.id)
       tasks.unshift({ ...t })
-      s.setState({ tasks: tasks.slice(0, 30) })
-      if (t.status === 'done') {
-        setTimeout(() => s.setState({ tasks: s.getState().tasks.filter((x) => x.id !== t.id) }), 4000)
+      useTasks.setState({ tasks: tasks.slice(0, 30) })
+      if (t.status === 'done' || t.status === 'cancelled') {
+        setTimeout(() => useTasks.setState({ tasks: useTasks.getState().tasks.filter((x) => x.id !== t.id) }), t.status === 'done' ? 4000 : 2500)
       }
     }),
     api.on<GameLog>('game:log', (l) => {
-      const logs = s.getState().logs
-      const arr = logs[l.instanceId] ? [...logs[l.instanceId], l] : [l]
-      if (arr.length > 3000) arr.splice(0, arr.length - 3000)
-      s.setState({ logs: { ...logs, [l.instanceId]: arr } })
+      pending.push(l)
+      if (!flushTimer) flushTimer = setTimeout(flushLogs, 200)
     }),
-    api.on<{ instanceId: string; running: boolean }>('game:state', () => api.running().then((running) => s.setState({ running }))),
+    api.on<{ instanceId: string; running: boolean }>('game:state', () => api.running().then(setRunning)),
     api.on<{ instanceId: string; code: number | null; analysis: CrashAnalysis | null; java: string }>('game:exit', (e) => {
-      api.running().then((running) => s.setState({ running }))
+      flushLogs()
+      api.running().then(setRunning)
       s.getState().refreshInstances()
       if (e.analysis) s.setState({ crash: { ...e.analysis, java: e.java } })
       setTimeout(() => s.getState().refreshCloud(), 15000)

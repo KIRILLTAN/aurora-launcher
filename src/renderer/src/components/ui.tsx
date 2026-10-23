@@ -43,20 +43,29 @@ export function timeAgo(ts?: number): string {
 }
 
 export function Modal(props: { title: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode; size?: 'wide' | 'narrow'; icon?: ReactNode }) {
+  const [closing, setClosing] = useState(false)
+  const onCloseRef = useRef(props.onClose)
+  onCloseRef.current = props.onClose
+  /** Сначала проигрываем анимацию закрытия, потом убираем окно. */
+  const close = (): void => {
+    if (closing) return
+    setClosing(true)
+    setTimeout(() => onCloseRef.current(), document.documentElement.classList.contains('reduced-effects') ? 0 : 190)
+  }
   useEffect(() => {
     const k = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') props.onClose()
+      if (e.key === 'Escape') close()
     }
     window.addEventListener('keydown', k)
     return () => window.removeEventListener('keydown', k)
-  }, [props.onClose])
+  })
   return (
-    <div className="backdrop" onMouseDown={(e) => e.target === e.currentTarget && props.onClose()}>
+    <div className={`backdrop ${closing ? 'closing' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div className={`modal ${props.size || ''}`}>
         <div className="modal-head">
           {props.icon}
           <h2>{props.title}</h2>
-          <button className="btn ghost icon close" onClick={props.onClose}>
+          <button className="btn ghost icon close" onClick={close}>
             <X size={18} />
           </button>
         </div>

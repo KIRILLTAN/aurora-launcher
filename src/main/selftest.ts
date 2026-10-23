@@ -2,13 +2,16 @@ import fs from 'fs'
 import path from 'path'
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { addOffline } from './auth/accounts'
-import { createInstance, getInstance, gameDir, deleteInstance } from './instances'
+import AdmZip from 'adm-zip'
+import type { Task } from '@shared/types'
+import { createInstance, getInstance, gameDir, deleteInstance, listInstances } from './instances'
+import { inspectImport, importInstance } from './importer'
 import { useFolder, pushInstances, listRemote, pullInstance } from './sync'
 import { ensureInstalled, launchInstance, stopInstance } from './minecraft/launch'
-import { TaskHandle } from './events'
+import { TaskHandle, cancelTask } from './events'
 import { updateSettings } from './settings'
 import { modrinthVersions } from './catalog/modrinth'
-import { installModrinthProject } from './catalog/modpacks'
+import { installModrinthProject, installModrinthPack } from './catalog/modpacks'
 
 /**
  * Самопроверка для CI (AURORA_SELFTEST=<папка>): скриншоты страниц,
@@ -64,6 +67,7 @@ export async function runSelfTest(win: BrowserWindow, outDir: string): Promise<v
     // Реальный запуск игры
     const lines: string[] = []
     let onExit: ((p: never) => void) | undefined
+    let taskLog: Task[] = []
     const started = new Promise<string>((resolve) => {
       const timer = setInterval(() => {
         const text = lines.join('\n')
@@ -80,6 +84,10 @@ export async function runSelfTest(win: BrowserWindow, outDir: string): Promise<v
     const orig = win.webContents.send.bind(win.webContents)
     win.webContents.send = ((ch: string, payload: { line: string; analysis?: unknown }) => {
       if (ch === 'game:log') lines.push(payload.line)
+      if (ch === 'task:update') {
+        const t = payload as unknown as Task
+        taskLog = [t, ...taskLog.filter((x) => x.id !== t.id)]
+      }
       if (ch === 'game:exit') {
         log('game-exit', JSON.stringify(payload).slice(0, 300))
         onExit?.(payload as never)
@@ -137,6 +145,44 @@ export async function runSelfTest(win: BrowserWindow, outDir: string): Promise<v
     await go('home')
     await wait(6000)
     await shot('page-home-servers')
+
+    // Импорт «живой» сборки в формате Prism Launcher / MultiMC
+    const prism = new AdmZip()
+    const root = 'Моя сборка Prism/'
+    prism.addFile(root + 'mmc-pack.json', Buffer.from(JSON.stringify({ components: [{ uid: 'net.minecraft', version: '1.21.1' }, { uid: 'net.fabricmc.fabric-loader', version: '0.16.5' }], formatVersion: 1 })))
+    prism.addFile(root + 'instance.cfg', Buffer.from('[General]\nname=Выживалка из Prism\ntotalTimePlayed=7200\n'))
+    prism.addFile(root + 'minecraft/config/test.toml', Buffer.from('a = 1'))
+    prism.addFile(root + 'minecraft/saves/Мир/level.dat', Buffer.from('fake'))
+    prism.addFile(root + 'minecraft/logs/latest.log', Buffer.from('skip me'))
+    prism.addFile(root + 'minecraft/options.txt', Buffer.from('renderDistance:8\n'))
+    const prismFile = path.join(outDir, 'prism-export.zip')
+    prism.writeZip(prismFile)
+    const preview = await inspectImport(prismFile)
+    log('import-inspect', `${preview.format} ${preview.name} ${preview.mcVersion} ${preview.loader} ${preview.loaderVersion} worlds=${preview.worlds} play=${preview.playTime}`)
+    const imported = await importInstance(prismFile)
+    const g = gameDir(imported.id)
+    log('import', `id=${imported.id} world=${fs.existsSync(path.join(g, 'saves', 'Мир', 'level.dat'))} logsSkipped=${!fs.existsSync(path.join(g, 'logs', 'latest.log'))} version=${getInstance(imported.id).versionId}`)
+
+    // Отмена установки большого модпака
+    let cancelled = 'не отменилось'
+    const watcher = setInterval(() => {
+      const t = taskLog.find((x) => x.cancellable && x.status === 'running' && x.title.includes('Modrinth') && x.progress > 0.05)
+      if (t) {
+        clearInterval(watcher)
+        cancelTask(t.id)
+      }
+    }, 300)
+    const before = listInstances().length
+    try {
+      await installModrinthPack('fabulously-optimized')
+    } catch (e) {
+      cancelled = `${(e as Error).message}; сборок до=${before} после=${listInstances().length}`
+    }
+    clearInterval(watcher)
+    log('cancel', cancelled)
+    await go('library')
+    await wait(2500)
+    await shot('page-library-import')
   } catch (e) {
     log('fatal', (e as Error).stack || String(e))
   }

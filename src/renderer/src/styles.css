@@ -356,3 +356,118 @@ input[type='range']::-webkit-slider-thumb { -webkit-appearance: none; width: 18p
 .page-header .actions { flex-wrap: wrap; justify-content: flex-end; }
 .btn.sm.icon { padding: 0; }
 .btn svg { flex: none; }
+
+/* =====================================================================
+   v1.2 — плавные анимации и оптимизация отрисовки
+   ===================================================================== */
+:root {
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+/* Фон: градиенты вместо filter: blur — в разы дешевле для видеокарты */
+.aurora-bg .blob {
+  filter: none;
+  opacity: 0.5;
+  background: radial-gradient(circle at center, var(--c) 0%, color-mix(in srgb, var(--c) 35%, transparent) 30%, transparent 65%) !important;
+  will-change: transform;
+  animation-timing-function: ease-in-out;
+}
+.aurora-bg .b1 { --c: var(--a1); }
+.aurora-bg .b2 { --c: var(--a2); }
+.aurora-bg .b3 { --c: var(--a3); opacity: 0.4; }
+
+/* Карточки без backdrop-filter: фон и так размыт, а blur на каждой карточке тормозит */
+.card { backdrop-filter: none; background: rgba(15, 21, 46, 0.72); }
+.main { contain: layout paint; }
+
+/* Пока идёт игра или включены облегчённые эффекты — фон замирает */
+.game-running .aurora-bg *, .reduced-effects .aurora-bg *, .game-running .hero .ribbons span, .reduced-effects .hero .ribbons span, .game-running .play-btn::after, .reduced-effects .play-btn::after {
+  animation-play-state: paused !important;
+}
+.reduced-effects .page, .reduced-effects .inst-card, .reduced-effects .catalog-item, .reduced-effects .modal, .reduced-effects .backdrop {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* Переходы между страницами */
+.page { animation: pageIn 0.45s var(--ease-out); scroll-behavior: smooth; }
+@keyframes pageIn {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Появление элементов списков лесенкой */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(12px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+.grid.cards > *, .catalog-list > *, .quick-row > *, .list > .list-row, .home-grid > *, .grid.two > * {
+  animation: rise 0.5s var(--ease-out) both;
+}
+.grid.cards > :nth-child(1), .catalog-list > :nth-child(1), .quick-row > :nth-child(1), .list > :nth-child(1), .home-grid > :nth-child(1), .grid.two > :nth-child(1) { animation-delay: 0.02s; }
+.grid.cards > :nth-child(2), .catalog-list > :nth-child(2), .quick-row > :nth-child(2), .list > :nth-child(2), .home-grid > :nth-child(2), .grid.two > :nth-child(2) { animation-delay: 0.06s; }
+.grid.cards > :nth-child(3), .catalog-list > :nth-child(3), .quick-row > :nth-child(3), .list > :nth-child(3), .grid.two > :nth-child(3) { animation-delay: 0.1s; }
+.grid.cards > :nth-child(4), .catalog-list > :nth-child(4), .quick-row > :nth-child(4), .list > :nth-child(4), .grid.two > :nth-child(4) { animation-delay: 0.14s; }
+.grid.cards > :nth-child(5), .catalog-list > :nth-child(5), .quick-row > :nth-child(5), .list > :nth-child(5) { animation-delay: 0.18s; }
+.grid.cards > :nth-child(6), .catalog-list > :nth-child(6), .quick-row > :nth-child(6), .list > :nth-child(6) { animation-delay: 0.22s; }
+.grid.cards > :nth-child(7), .catalog-list > :nth-child(7), .quick-row > :nth-child(7), .list > :nth-child(7) { animation-delay: 0.26s; }
+.grid.cards > :nth-child(8), .catalog-list > :nth-child(8), .quick-row > :nth-child(8), .list > :nth-child(8) { animation-delay: 0.3s; }
+.grid.cards > :nth-child(n + 9), .catalog-list > :nth-child(n + 9), .list > :nth-child(n + 9) { animation-delay: 0.34s; }
+
+/* Боковое меню со скользящим индикатором */
+.sidebar .nav { position: relative; display: flex; flex-direction: column; gap: 4px; }
+.sidebar .nav-item { height: 44px; padding: 0 12px; position: relative; z-index: 1; transition: color 0.25s var(--ease-out), background 0.25s; }
+.sidebar .nav-item.active { background: transparent; border-color: transparent; }
+.sidebar .nav-item.active::before { display: none; }
+.sidebar .nav-item svg { transition: transform 0.35s var(--ease-spring); }
+.sidebar .nav-item:hover svg { transform: scale(1.12) rotate(-4deg); }
+.nav-indicator {
+  position: absolute; left: 0; right: 0; top: 0; height: 44px; border-radius: 12px; z-index: 0;
+  background: linear-gradient(120deg, color-mix(in srgb, var(--a1) 16%, transparent), color-mix(in srgb, var(--a3) 16%, transparent));
+  border: 1px solid var(--border);
+  transition: transform 0.45s var(--ease-spring);
+}
+.nav-indicator::before { content: ''; position: absolute; left: -12px; top: 11px; bottom: 11px; width: 3px; border-radius: 3px; background: var(--grad); }
+
+/* Кнопки: пружинящее нажатие */
+.btn { transition: transform 0.25s var(--ease-spring), background 0.2s, box-shadow 0.25s, color 0.2s, border-color 0.2s, opacity 0.2s; }
+.btn:active:not(:disabled) { transform: scale(0.96); transition-duration: 0.08s; }
+.inst-card, .catalog-item, .quick, .featured, .account-card { transition: transform 0.35s var(--ease-out), border-color 0.25s, box-shadow 0.35s, background 0.25s; }
+.catalog-item:hover, .quick:hover, .featured:hover { transform: translateY(-2px); }
+
+/* Вкладки: подчёркивание выезжает */
+.tabs button::after { content: ''; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; border-radius: 2px; background: var(--grad); transform: scaleX(0); transition: transform 0.35s var(--ease-out); }
+.tabs button.active::after { transform: scaleX(1); }
+.tabs button { transition: color 0.2s; }
+
+/* Переключатели сегментов */
+.seg button { transition: background 0.25s var(--ease-out), color 0.2s, box-shadow 0.25s; }
+
+/* Модальные окна: появление и исчезновение */
+.backdrop { animation: fade 0.25s var(--ease-out); }
+.modal { animation: pop 0.38s var(--ease-spring); }
+.backdrop.closing { animation: fadeOut 0.2s ease forwards; }
+.backdrop.closing .modal { animation: popOut 0.2s ease forwards; }
+@keyframes pop { from { opacity: 0; transform: scale(0.94) translateY(16px); } to { opacity: 1; transform: none; } }
+@keyframes fadeOut { to { opacity: 0; } }
+@keyframes popOut { to { opacity: 0; transform: scale(0.96) translateY(8px); } }
+
+/* Прогресс через transform — без перерасчёта раскладки */
+.progress > div { width: 100%; transform-origin: left center; transition: transform 0.3s var(--ease-out); }
+.progress.indeterminate > div { width: 35%; }
+
+/* Тосты и задачи */
+.toast, .task { animation: slideIn 0.4s var(--ease-spring); }
+@keyframes slideIn { from { opacity: 0; transform: translateX(24px) scale(0.98); } to { opacity: 1; transform: none; } }
+.task.cancelled { opacity: 0.75; }
+
+/* Кнопка «Играть» — мягкое свечение */
+.btn.primary.play-btn { animation: breathe 3.6s ease-in-out infinite; }
+@keyframes breathe {
+  0%, 100% { box-shadow: 0 10px 30px -12px color-mix(in srgb, var(--a2) 80%, transparent); }
+  50% { box-shadow: 0 14px 40px -8px color-mix(in srgb, var(--a1) 90%, transparent); }
+}
+.game-running .btn.primary.play-btn, .reduced-effects .btn.primary.play-btn { animation: none; }

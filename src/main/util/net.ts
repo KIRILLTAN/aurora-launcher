@@ -4,6 +4,7 @@ import crypto from 'crypto'
 import { Readable, Transform } from 'stream'
 import { pipeline } from 'stream/promises'
 import { app } from 'electron'
+import { CancelledError, isCancel, throwIfAborted } from "./cancel"
 
 export const USER_AGENT = `KIRILLTAN/aurora-launcher/${app.getVersion()} (github.com/KIRILLTAN/aurora-launcher)`
 
@@ -70,14 +71,15 @@ export function isPresent(item: DownloadItem): boolean {
   }
 }
 
-export async function downloadFile(item: DownloadItem, onBytes?: (n: number) => void, attempts = 3): Promise<void> {
+export async function downloadFile(item: DownloadItem, onBytes?: (n: number) => void, attempts = 3, signal?: AbortSignal): Promise<void> {
   const urls = [item.url, ...(item.mirrors || [])].filter(Boolean)
   let lastErr: unknown
   for (let i = 0; i < attempts; i++) {
     const url = urls[i % urls.length]
+    throwIfAborted(signal)
     try {
       await fs.promises.mkdir(path.dirname(item.path), { recursive: true })
-      const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT } })
+      const res = await fetch(url, { headers: { "User-Agent": USER_AGENT }, signal })
       if (!res.ok || !res.body) throw new HttpError(res.status, `HTTP ${res.status} ${url}`)
       const tmp = item.path + '.part'
       const hash = crypto.createHash('sha1')
@@ -88,7 +90,7 @@ export async function downloadFile(item: DownloadItem, onBytes?: (n: number) => 
           cb(null, chunk)
         }
       })
-      await pipeline(Readable.fromWeb(res.body as never), counter, fs.createWriteStream(tmp))
+      await pipeline(Readable.fromWeb(res.body as never), counter, fs.createWriteStream(tmp), { signal })
       const digest = hash.digest('hex')
       if (item.sha1 && digest !== item.sha1.toLowerCase()) {
         fs.rmSync(tmp, { force: true })
@@ -98,6 +100,10 @@ export async function downloadFile(item: DownloadItem, onBytes?: (n: number) => 
       return
     } catch (e) {
       lastErr = e
+      if (signal?.aborted || isCancel(e)) {
+        fs.rmSync(item.path + ".part", { force: true })
+        throw new CancelledError()
+      }
       if (e instanceof HttpError && e.status === 404 && urls.length === 1) break
       await new Promise((r) => setTimeout(r, 400 * (i + 1)))
     }
@@ -108,7 +114,7 @@ export async function downloadFile(item: DownloadItem, onBytes?: (n: number) => 
 /** Параллельная загрузка с общим прогрессом. Уже скачанные файлы пропускаются. */
 export async function downloadAll(
   items: DownloadItem[],
-  opts: { concurrency?: number; onProgress?: (done: number, total: number, bytes: number) => void } = {}
+  opts: { concurrency?: number; onProgress?: (done: number, total: number, bytes: number) => void; signal?: AbortSignal } = {}
 ): Promise<void> {
   const seen = new Set<string>()
   const queue = items.filter((i) => {
@@ -125,10 +131,11 @@ export async function downloadAll(
   const worker = async (): Promise<void> => {
     for (;;) {
       const item = queue.shift()
-      if (!item) return
+      if (!item || opts.signal?.aborted) return
       try {
-        await downloadFile(item, (n) => (bytes += n))
+        await downloadFile(item, (n) => (bytes += n), 3, opts.signal)
       } catch (e) {
+        if (isCancel(e)) return
         errors.push(`${path.basename(item.path)}: ${e instanceof Error ? e.message : e}`)
       }
       done++
@@ -136,6 +143,7 @@ export async function downloadAll(
     }
   }
   await Promise.all(Array.from({ length: Math.max(1, opts.concurrency || 8) }, worker))
+  throwIfAborted(opts.signal)
   if (errors.length) {
     throw new Error(`Не удалось скачать ${errors.length} файл(ов):\n` + errors.slice(0, 6).join('\n'))
   }

@@ -68,6 +68,14 @@ export interface Settings {
   syncAuto: boolean
   githubClientId: string
   servers: SavedServer[]
+  /** анимации интерфейса: полные или облегчённые */
+  animations: 'full' | 'reduced'
+  /** автоподбор памяти по числу модов и ОЗУ */
+  memoryAuto: boolean
+  /** профиль JVM: оптимизированный G1, ZGC (Java 21+) или только свои аргументы */
+  jvmPreset: 'g1' | 'zgc' | 'custom'
+  /** повышенный приоритет процесса игры */
+  highPriority: boolean
 }
 
 export interface Task {
@@ -75,8 +83,9 @@ export interface Task {
   title: string
   detail?: string
   progress: number
-  status: 'running' | 'done' | 'error'
+  status: 'running' | 'done' | 'error' | 'cancelled'
   error?: string
+  cancellable?: boolean
 }
 
 export interface JavaInstall {
@@ -261,4 +270,20 @@ export interface ScreenshotInfo {
   path: string
   time: number
   thumb: string
+}
+
+export interface ImportPreview {
+  file: string
+  format: 'prism' | 'curseforge-app' | 'atlauncher' | 'minecraft' | 'mrpack' | 'curseforge-pack'
+  formatLabel: string
+  name: string
+  mcVersion?: string
+  loader: LoaderType
+  loaderVersion?: string
+  playTime?: number
+  memoryMax?: number
+  jvmArgs?: string
+  mods: number
+  worlds: number
+  sizeMb: number
 }

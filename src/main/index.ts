@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, dialog, nativeTheme } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, dialog, nativeTheme, screen } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
@@ -17,21 +17,25 @@ import { listLoaderVersions } from './minecraft/loaders'
 import { launchInstance, stopInstance, runningIds, getLog, reinstallInstance } from './minecraft/launch'
 import { askAi } from './crash/ai'
 import { getRemoteInfo, initUpdater, checkForUpdates, installUpdate, getUpdateStatus } from './remote'
-import { withTask, emit } from './events'
+import { withTask, withCancellableTask, emit, cancelTask } from './events'
 import { runSelfTest } from './selftest'
 import * as sync from './sync'
 import * as features from './features'
+import * as importer from './importer'
 import { helperSupported } from './helper'
 
 let win: BrowserWindow | null = null
 
 function createWindow(): void {
   nativeTheme.themeSource = 'dark'
+  // Окно фиксированного размера: без разворачивания и растягивания
+  const area = screen.getPrimaryDisplay().workAreaSize
   win = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    minWidth: 1024,
-    minHeight: 640,
+    width: Math.min(1280, area.width - 24),
+    height: Math.min(800, area.height - 24),
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
     frame: false,
     show: false,
     backgroundColor: '#070a18',
@@ -61,7 +65,6 @@ const handlers: Record<string, Handler> = {
   // окно и система
   'app:info': () => ({ version: app.getVersion(), platform: process.platform, arch: process.arch, dataDir: getSettings().dataDir, totalMem: Math.round(os.totalmem() / 1048576) }),
   'win:minimize': () => win?.minimize(),
-  'win:maximize': () => (win?.isMaximized() ? win.unmaximize() : win?.maximize()),
   'win:close': () => win?.close(),
   'shell:openPath': (p: string) => shell.openPath(p),
   'shell:openUrl': (url: string) => {
@@ -154,6 +157,8 @@ const handlers: Record<string, Handler> = {
       ? packs.installModrinthProject(instanceId, projectId, type, versionId)
       : packs.installCurseforgeProject(instanceId, projectId, type, versionId),
   'catalog:importFile': (file: string) => packs.importPackFile(file),
+  'import:inspect': (file: string) => importer.inspectImport(file),
+  'import:run': (file: string, opts?: importer.ImportOptions) => importer.importInstance(file, opts),
   'catalog:installUrl': (url: string, name?: string) => packs.installPackFromUrl(url, name),
 
   // аккаунты
@@ -170,7 +175,7 @@ const handlers: Record<string, Handler> = {
   'java:add': (p: string) => java.addManualJava(p),
   'java:remove': (p: string) => java.removeJava(p),
   'java:releases': () => java.availableJavaReleases(),
-  'java:install': (major: number, image: 'jre' | 'jdk') => withTask(`Установка Java ${major}`, (t) => java.installJava(major, t, image)),
+  'java:install': (major: number, image: 'jre' | 'jdk') => withCancellableTask(`Установка Java ${major}`, (t) => java.installJava(major, t, image)),
   'java:required': (mc: string) => java.requiredJavaMajor(mc),
   'java:hint': (major: number) => java.javaHint(major),
 
@@ -207,6 +212,7 @@ const handlers: Record<string, Handler> = {
   'features:backupWorld': (id: string, folder: string) => features.backupWorld(id, folder),
   'features:screenshots': (id: string) => features.listScreenshots(id),
   'shell:showItem': (p: string) => shell.showItemInFolder(p),
+  'task:cancel': (id: string) => cancelTask(id),
 
   // онлайн и обновления
   'remote:info': () => getRemoteInfo(),

@@ -5,6 +5,7 @@ import { api } from '../api'
 import { useStore } from '../store'
 import { Modal, LOADERS, Spinner } from '../components/ui'
 import { CatalogBrowser } from '../pages/Catalog'
+import { beginImport } from './Import'
 
 type Tab = 'version' | 'catalog' | 'file'
 
@@ -80,15 +81,9 @@ export default function CreateInstanceDialog() {
     }
   }
 
-  const importPath = async (p: string): Promise<void> => {
+  const importPath = (p: string): void => {
     close()
-    try {
-      const inst = await api.importFile(p)
-      toast(`Импортирована «${inst.name}»`, 'success')
-      go('instance', inst.id)
-    } catch (e) {
-      toast((e as Error).message, 'error')
-    }
+    void beginImport(p)
   }
 
   return (
@@ -125,7 +120,7 @@ export default function CreateInstanceDialog() {
             </div>
             <div className="seg" style={{ alignSelf: 'flex-start' }}>
               <button className={filter === 'release' ? 'active' : ''} onClick={() => setFilter('release')}>Релизы</button>
-              {settings?.showSnapshots !== false && <button className={filter === 'snapshot' ? 'active' : ''} onClick={() => setFilter('snapshot')}>Снапшоты</button>}
+              <button className={filter === 'snapshot' ? 'active' : ''} onClick={() => setFilter('snapshot')}>Снапшоты</button>
               <button className={filter === 'old' ? 'active' : ''} onClick={() => setFilter('old')}>Beta/Alpha</button>
             </div>
             {!versions && !vErr && <div className="row muted"><Spinner /> Загрузка версий…</div>}
@@ -194,13 +189,14 @@ export default function CreateInstanceDialog() {
             if (f) importPath(api.pathForFile(f))
           }}
           onClick={async () => {
-            const [f] = await api.openFile([{ name: 'Сборки', extensions: ['mrpack', 'zip'] }])
+            const [f] = await api.openFile([{ name: 'Сборки', extensions: ['zip', 'mrpack'] }])
             if (f) importPath(f)
           }}
         >
           <FileArchive size={42} />
           <h3 style={{ color: 'var(--text)' }}>Перетащите файл сборки</h3>
-          <div>.mrpack (Modrinth) или .zip (CurseForge) — или нажмите, чтобы выбрать</div>
+          <div>Архив или папка сборки: Prism / MultiMC, CurseForge, ATLauncher, TLauncher (.minecraft), .mrpack — или нажмите, чтобы выбрать</div>
+          <button className="btn" style={{ marginTop: 14 }} onClick={async (e) => { e.stopPropagation(); const d = await api.openDir(); if (d) importPath(d) }}>Выбрать папку</button>
         </div>
       )}
     </Modal>

@@ -8,7 +8,7 @@ import { createInstance, gameDir, getInstance, listInstances, saveInstance } fro
 import { fetchJson, downloadAll, sha1File, USER_AGENT, type DownloadItem } from './util/net'
 import { readJson, writeJson, exists, ensureDir, safeJoin } from './util/store'
 import { sealJson, unsealJson } from './util/secure'
-import { emit, withTask, type TaskHandle } from './events'
+import { emit, withTask, withCancellableTask, type TaskHandle } from "./events"
 import { HELPER_FILE } from './helper'
 import { cfPost } from './catalog/curseforge'
 import { ensureInstalled } from './minecraft/launch'
@@ -439,7 +439,7 @@ export function removeRemote(id: string): Promise<void> {
 
 /** Скачивает сборку из облака и собирает её 1 в 1. */
 export function pullInstance(id: string): Promise<Instance> {
-  return withTask('Синхронизация: загрузка из облака', async (t) => {
+  return withCancellableTask("Синхронизация: загрузка из облака", async (t) => {
     const prov = await provider()
     const raw = await prov.read(key(id))
     if (!raw) throw new Error('Сборка не найдена в облаке')
@@ -482,6 +482,7 @@ export function pullInstance(id: string): Promise<Instance> {
     }
     await downloadAll(items, {
       concurrency: getSettings().concurrency,
+      signal: t.signal,
       onProgress: (d, n) => t.update(0.05 + 0.45 * (n ? d / n : 1), `Файлы: ${d}/${n}`)
     })
     for (const c of man.configs) {

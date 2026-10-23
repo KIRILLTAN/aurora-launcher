@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, Play, Square, FolderOpen, Copy, Trash2, RefreshCw, Package, Settings2, Terminal, Puzzle, Plus, Search, FileUp, Download, Image, Sun, UploadCloud, Zap, ArrowUpCircle, Globe2, Camera, Archive, Keyboard } from "lucide-react"
 import type { Instance, JavaInstall, ModInfo, ModUpdate, WorldInfo, ScreenshotInfo } from '@shared/types'
 import { api } from '../api'
-import { useStore } from '../store'
+import { useStore, useLogs } from '../store'
 import { InstanceIcon, loaderLabel, fmtPlaytime, Switch, Spinner, Modal } from '../components/ui'
 import { CatalogBrowser } from './Catalog'
 import { PullButton } from "../components/Cloud"
@@ -320,11 +320,10 @@ function SettingsTab({ inst }: { inst: Instance }) {
 }
 
 function ConsoleTab({ inst }: { inst: Instance }) {
-  const { logs } = useStore()
+  const live = useLogs((s) => s.logs[inst.id])
   const [history, setHistory] = useState<string[]>([])
   const [filter, setFilter] = useState('')
   const ref = useRef<HTMLDivElement>(null)
-  const live = logs[inst.id]
   useEffect(() => {
     if (!live?.length) api.gameLog(inst.id).then(setHistory)
   }, [inst.id])
@@ -347,7 +346,7 @@ function ConsoleTab({ inst }: { inst: Instance }) {
       </div>
       <div className="console" ref={ref}>
         {shown.length === 0 && <span className="muted">Лог появится после запуска игры.</span>}
-        {shown.map((l, i) => (
+        {shown.slice(-1500).map((l, i) => (
           <div key={i} className={l.level || 'info'}>{l.line}</div>
         ))}
       </div>

@@ -85,10 +85,13 @@ export default function SettingsPage() {
           </div>
           <div className="setting-row">
             <div className="text">
-              <b>Показывать снапшоты</b>
-              <span>Тестовые версии Minecraft в списке</span>
+              <b>Анимации интерфейса</b>
+              <span>Облегчённый режим отключает анимации — для слабых ПК</span>
             </div>
-            <Switch on={settings.showSnapshots} onChange={(v) => patch({ showSnapshots: v })} />
+            <select className="select" style={{ width: 200 }} value={settings.animations} onChange={(e) => patch({ animations: e.target.value as Settings['animations'] })}>
+              <option value="full">Плавные</option>
+              <option value="reduced">Облегчённые</option>
+            </select>
           </div>
           <div className="setting-row">
             <div className="text">
@@ -100,8 +103,33 @@ export default function SettingsPage() {
         </div>
 
         <div className="card pad">
-          <h3 className="row"><MemoryStick size={17} /> Память и Java по умолчанию</h3>
-          <div className="field">
+          <h3 className="row"><MemoryStick size={17} /> Оптимизация игры</h3>
+          <div className="setting-row">
+            <div className="text">
+              <b>Автоподбор памяти</b>
+              <span>Лаунчер сам выделит память по числу модов и объёму ОЗУ (если в сборке не задано вручную)</span>
+            </div>
+            <Switch on={settings.memoryAuto} onChange={(v) => patch({ memoryAuto: v })} />
+          </div>
+          <div className="setting-row">
+            <div className="text">
+              <b>Профиль сборщика мусора (JVM)</b>
+              <span>G1 — оптимизированные флаги для ровного FPS; ZGC — почти без фризов на Java 21+ при 8+ ГБ</span>
+            </div>
+            <select className="select" style={{ width: 200 }} value={settings.jvmPreset} onChange={(e) => patch({ jvmPreset: e.target.value as Settings['jvmPreset'] })}>
+              <option value="g1">G1 (рекомендуется)</option>
+              <option value="zgc">ZGC (Java 21+)</option>
+              <option value="custom">Только свои аргументы</option>
+            </select>
+          </div>
+          <div className="setting-row">
+            <div className="text">
+              <b>Высокий приоритет игры</b>
+              <span>Система отдаёт игре больше процессорного времени</span>
+            </div>
+            <Switch on={settings.highPriority} onChange={(v) => patch({ highPriority: v })} />
+          </div>
+          <div className="field" style={{ opacity: settings.memoryAuto ? 0.55 : 1 }}>
             <label>Максимум памяти: {settings.memoryMax} МБ ({(settings.memoryMax / 1024).toFixed(1)} ГБ)</label>
             <input type="range" min={1024} max={maxMem} step={512} value={settings.memoryMax} onChange={(e) => setSettings({ ...settings, memoryMax: parseInt(e.target.value) })} onMouseUp={() => patch({ memoryMax: settings.memoryMax })} />
             <span className="hint">В системе {Math.round((info?.totalMem || 0) / 1024)} ГБ ОЗУ</span>
@@ -121,8 +149,8 @@ export default function SettingsPage() {
             </div>
           </div>
           <div className="field" style={{ marginTop: 12 }}>
-            <label>Аргументы JVM</label>
-            <textarea className="textarea" defaultValue={settings.jvmArgs} onBlur={(e) => patch({ jvmArgs: e.target.value })} />
+            <label>Дополнительные аргументы JVM</label>
+            <textarea className="textarea" defaultValue={settings.jvmArgs} placeholder="добавляются к оптимизированному профилю" onBlur={(e) => patch({ jvmArgs: e.target.value })} />
           </div>
           <div className="field" style={{ marginTop: 12 }}>
             <label>Папка данных (версии, библиотеки, сборки)</label>

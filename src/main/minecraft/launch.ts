@@ -1,4 +1,5 @@
 import fs from 'fs'
+import os from 'os'
 import path from 'path'
 import { spawn, type ChildProcess } from 'child_process'
 import { app, BrowserWindow } from 'electron'
@@ -12,6 +13,7 @@ import { analyzeCrash } from '../crash/analyzer'
 import { cachedJavas, detectJavas, installJava, launchBinary, pickJava, probeJava, requiredJavaMajor } from '../java/java'
 import { installVersion, collectLibraries, clientJarPath, nativesDir, ensureAuthlibInjector } from './install'
 import { installLoader } from './loaders'
+import { optimizedJvmArgs, autoMemory } from './jvm'
 import { applyHelper } from '../helper'
 import { autoPush } from '../sync'
 import { resolveVersion, rulesAllow, type Argument, type ResolvedVersion } from './versions'
@@ -141,7 +143,7 @@ export async function launchInstance(id: string, accountId: string | undefined, 
   const inst = getInstance(id)
   const s = getSettings()
   if (!accountId) throw new Error('Выберите аккаунт для игры')
-  const task = new TaskHandle(`Запуск «${inst.name}»`)
+  const task = new TaskHandle(`Запуск «${inst.name}»`, true)
   try {
     task.detail('Проверка аккаунта')
     const auth = await getLaunchAuth(accountId)
@@ -190,7 +192,10 @@ export async function launchInstance(id: string, accountId: string | undefined, 
     }
     const features: Record<string, boolean> = { has_custom_resolution: true, has_quick_plays_support: false, is_quick_play_multiplayer: !!quickPlayServer }
 
-    const jvm: string[] = [`-Xms${inst.memoryMin || s.memoryMin}M`, `-Xmx${inst.memoryMax || s.memoryMax}M`]
+    const maxMem = inst.memoryMax || (s.memoryAuto ? autoMemory(inst, gdir) : s.memoryMax)
+    const minMem = Math.min(inst.memoryMin || s.memoryMin, maxMem)
+    const jvm: string[] = [`-Xms${minMem}M`, `-Xmx${maxMem}M`]
+    jvm.push(...optimizedJvmArgs(s.jvmPreset, java.major, maxMem))
     jvm.push(...splitArgs(inst.jvmArgs ?? s.jvmArgs))
     jvm.push('-Dlog4j2.formatMsgNoLookups=true')
     if (auth.injector) {
@@ -234,6 +239,13 @@ export async function launchInstance(id: string, accountId: string | undefined, 
     out.write(`Aurora Launcher ${app.getVersion()} | ${inst.name} | ${v.id}\nJava: ${java.path} (${java.version})\n${bin} ${masked.join(' ')}\n\n`)
 
     const proc = spawn(bin, args, { cwd: gdir, windowsHide: false, env: { ...process.env, JAVA_TOOL_OPTIONS: undefined } })
+    if (s.highPriority && proc.pid) {
+      try {
+        os.setPriority(proc.pid, os.constants.priority.PRIORITY_ABOVE_NORMAL)
+      } catch {
+        /* нет прав — играем с обычным приоритетом */
+      }
+    }
     const r: Running = { proc, startedAt: Date.now(), log: [], java }
     running.set(id, r)
     emit('game:state', { instanceId: id, running: true })
@@ -280,7 +292,7 @@ export async function launchInstance(id: string, accountId: string | undefined, 
 
 export async function reinstallInstance(id: string): Promise<void> {
   const inst = getInstance(id)
-  const task = new TaskHandle(`Переустановка «${inst.name}»`)
+  const task = new TaskHandle(`Переустановка «${inst.name}»`, true)
   try {
     if (inst.versionId) fs.rmSync(path.join(dirs.versions(), inst.versionId, 'natives'), { recursive: true, force: true })
     await ensureInstalled(inst, task, true)

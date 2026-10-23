@@ -35,6 +35,10 @@ public class HelperConfig {
     public boolean clock = false;
     /** Панель справа вместо слева */
     public boolean rightSide = false;
+    /** HUD брони справа от хотбара */
+    public boolean armorHud = false;
+    /** HUD щита (или предмета в левой руке) слева от хотбара */
+    public boolean offhandHud = false;
 
     public static void load() {
         try {
