@@ -61,7 +61,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $url = gh release view -R pal1000/mesa-dist-win --json assets --jq '.assets[] | select(.name | test("release-msvc\.7z$")) | .url'
+          $url = gh release view -R pal1000/mesa-dist-win --json assets --jq '.assets[] | select(.name | endswith("release-msvc.7z")) | .url'
           Write-Host "Mesa: $url"
           Invoke-WebRequest $url -OutFile mesa.7z
           7z x mesa.7z -omesa | Out-Null
