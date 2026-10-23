@@ -65,6 +65,7 @@ const NEEDS: Need[] = [
   { cls: C.STACK, name: 'isEmpty', argc: 0 },
   { cls: C.STACK, name: 'getDescriptionId', argc: 0 },
   { cls: C.STACK, name: 'hasFoil', argc: 0 },
+  { cls: C.STACK, name: 'getItem', argc: 0 },
   { cls: C.TEXT, name: 'getString', argc: 0 },
   { cls: C.COMPONENT, name: 'getString', argc: 0 },
   { cls: C.CLEVEL, name: 'entitiesForRendering', argc: 0 },
@@ -225,7 +226,7 @@ function findLibrary(prefix: string[], fileRe: RegExp): string | null {
 export async function buildOverlayMappings(inst: Instance, v: ResolvedVersion): Promise<{ file: string; ns: Namespace } | null> {
   const ns = overlayNamespace(inst, v)
   if (!ns) return null
-  const out = path.join(ensureDir(path.join(dirs.cache(), 'overlay')), `${v.id}-${ns}-v1.tsv`)
+  const out = path.join(ensureDir(path.join(dirs.cache(), 'overlay')), `${v.id}-${ns}-v2.tsv`)
   if (exists(out)) return { file: out, ns }
 
   const lines: string[] = []

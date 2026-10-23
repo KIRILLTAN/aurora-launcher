@@ -56,8 +56,8 @@ async function makeWorld(mc: string, outWorld: string, log: Log): Promise<boolea
     return false
   }
   const cmds = [
-    'summon minecraft:item ~2 ~1 ~ {Item:{id:"minecraft:diamond",count:5},NoGravity:1b,Age:-32768,PickupDelay:32767}',
-    'summon minecraft:item ~-3 ~1 ~2 {Item:{id:"minecraft:golden_apple",count:2},NoGravity:1b,Age:-32768,PickupDelay:32767}',
+    'summon minecraft:item ~4 ~1.5 ~18 {Item:{id:"minecraft:diamond",count:5},NoGravity:1b,Age:-32768,PickupDelay:32767}',
+    'summon minecraft:item ~-2 ~1.5 ~14 {Item:{id:"minecraft:golden_apple",count:2},NoGravity:1b,Age:-32768,PickupDelay:32767}',
     'summon minecraft:item ~ ~1 ~6 {Item:{id:"minecraft:oak_log",count:16},NoGravity:1b,Age:-32768,PickupDelay:32767}',
     'save-all flush',
     'stop'

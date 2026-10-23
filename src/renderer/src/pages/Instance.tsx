@@ -271,7 +271,11 @@ function SettingsTab({ inst }: { inst: Instance }) {
           <input className="input" value={form.icon || ''} placeholder="https://…" onChange={(e) => set('icon', e.target.value || undefined)} />
         </div>
         <div className="field">
-          <label>Память: {memMax} МБ ({(memMax / 1024).toFixed(1)} ГБ)</label>
+          <label className="row">
+            {!form.memoryMax && settings?.memoryAuto ? 'Память: авто (лаунчер подберёт по модам)' : `Память: ${memMax} МБ (${(memMax / 1024).toFixed(1)} ГБ)`}
+            <span className="grow" />
+            {form.memoryMax && <button className="btn ghost sm" onClick={() => set('memoryMax', undefined)}>Авто</button>}
+          </label>
           <input type="range" min={1024} max={Math.max(4096, Math.floor(totalMem * 0.75 / 512) * 512)} step={512} value={memMax} onChange={(e) => set('memoryMax', parseInt(e.target.value))} />
           <span className="hint">Ванилле хватает 2–3 ГБ, модпакам — 6–8 ГБ. В системе {Math.round(totalMem / 1024)} ГБ.</span>
         </div>

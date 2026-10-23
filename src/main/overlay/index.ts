@@ -295,7 +295,9 @@ function zipOf(file: string): AdmZip | null {
 /** Текстура предмета по его descriptionId: из jar игры или модов сборки. */
 export function overlayIcon(descriptionId: string): string {
   if (iconCache.has(descriptionId)) return iconCache.get(descriptionId)!
-  const m = /^(item|block)\.([^.]+)\.(.+)$/.exec(descriptionId)
+  // форматы: "item.minecraft.diamond", "block.minecraft.stone" или "minecraft:diamond"
+  const colon = /^([a-z0-9_.-]+):([a-z0-9_/.-]+)$/.exec(descriptionId)
+  const m = colon ? ['', 'item', colon[1], colon[2]] : /^(item|block)\.([^.]+)\.(.+)$/.exec(descriptionId)
   let result = ''
   const session = [...sessions.values()].find((s) => s.socket)
   if (m && session) {

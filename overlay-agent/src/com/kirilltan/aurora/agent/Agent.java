@@ -402,7 +402,13 @@ public final class Agent {
         Object name = call(st, STACK, "getHoverName");
         Object text = name == null ? null : call(name, TEXT, "getString");
         if (text == null && name != null) text = call(name, COMPONENT, "getString");
-        sb.append("{\"id\":").append(str(String.valueOf(call(st, STACK, "getDescriptionId"))))
+        Object id = call(st, STACK, "getDescriptionId");
+        if (id == null) {
+            // в новых версиях id берём у самого предмета: "minecraft:diamond"
+            Object item = call(st, STACK, "getItem");
+            if (item != null) id = String.valueOf(item);
+        }
+        sb.append("{\"id\":").append(str(String.valueOf(id)))
                 .append(",\"n\":").append(str(text == null ? "?" : String.valueOf(text)))
                 .append(",\"c\":").append(fmt(num(call(st, STACK, "getCount"))));
         if (Boolean.TRUE.equals(call(st, STACK, "isDamageableItem"))) {
