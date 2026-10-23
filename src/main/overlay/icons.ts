@@ -1,7 +1,8 @@
 import fs from 'fs'
 import path from 'path'
 import { exists } from '../util/store'
-import { readZipFiles, walkZip } from '../util/zip'
+import type yauzl from 'yauzl'
+import { entryBuffer, openZip } from '../util/zip'
 
 /*
  * Иконки предметов для оверлея — так же, как их строит игра: через описание предмета
@@ -22,8 +23,12 @@ export interface IconDef {
 }
 
 /** Ресурсы сборки: путь внутри jar → jar. Строится один раз по оглавлениям jar-файлов. */
+type Ref = { zip: yauzl.ZipFile; entry: yauzl.Entry }
+
 export class AssetIndex {
-  private map: Promise<Map<string, string>>
+  // jar-файлы остаются открытыми, а записи запоминаются: чтение файла — сразу, без обхода оглавления
+  private map: Promise<Map<string, Ref>>
+  private zips: yauzl.ZipFile[] = []
   private json = new Map<string, Promise<Record<string, unknown> | null>>()
   private icons = new Map<string, Promise<IconDef | null>>()
 
@@ -31,14 +36,24 @@ export class AssetIndex {
     this.map = (async () => {
       const all = [...jars]
       if (modsDir && exists(modsDir)) for (const f of await fs.promises.readdir(modsDir)) if (f.endsWith('.jar')) all.push(path.join(modsDir, f))
-      const map = new Map<string, string>()
+      const map = new Map<string, Ref>()
       for (const jar of all) {
         if (!exists(jar)) continue
-        await walkZip(jar, (e) => {
-          const n = e.fileName
-          if (!n.startsWith('assets/') || map.has(n)) return
-          if ((n.endsWith('.png') && n.includes('/textures/')) || (n.endsWith('.json') && (n.includes('/models/') || n.includes('/items/')))) map.set(n, jar)
-        }).catch(() => undefined)
+        const zip = await openZip(jar).catch(() => null)
+        if (!zip) continue
+        this.zips.push(zip)
+        await new Promise<void>((resolve) => {
+          zip.on('entry', (e: yauzl.Entry) => {
+            const n = e.fileName
+            if (n.startsWith('assets/') && !map.has(n) && ((n.endsWith('.png') && n.includes('/textures/')) || (n.endsWith('.json') && (n.includes('/models/') || n.includes('/items/'))))) {
+              map.set(n, { zip, entry: e })
+            }
+            zip.readEntry()
+          })
+          zip.on('end', () => resolve())
+          zip.on('error', () => resolve())
+          zip.readEntry()
+        })
       }
       return map
     })()
@@ -54,8 +69,20 @@ export class AssetIndex {
   }
 
   private async buf(entry: string): Promise<Buffer | null> {
-    const jar = (await this.map).get(entry)
-    return jar ? (await readZipFiles(jar, [entry])).get(entry) || null : null
+    const ref = (await this.map).get(entry)
+    return ref ? entryBuffer(ref.zip, ref.entry).catch(() => null) : null
+  }
+
+  /** Закрыть jar-файлы (игра закрыта). */
+  close(): void {
+    for (const z of this.zips) {
+      try {
+        z.close()
+      } catch {
+        /* уже закрыт */
+      }
+    }
+    this.zips = []
   }
 
   private readJson(entry: string): Promise<Record<string, unknown> | null> {
@@ -90,8 +117,10 @@ export class AssetIndex {
     if (!j) return depth === 0 ? null : { textures: {}, chain: [id] }
     const parent = typeof j.parent === 'string' ? await this.model(j.parent, depth + 1) : null
     const textures: Record<string, string> = { ...(parent?.textures || {}) }
-    for (const [k, v] of Object.entries((j.textures || {}) as Record<string, string>)) {
-      if (typeof v === 'string') textures[k] = v.startsWith('#') || v.includes(':') ? v : `${ns}:${v}`
+    for (const [k, raw] of Object.entries((j.textures || {}) as Record<string, unknown>)) {
+      // 26.x: текстура может быть объектом { "sprite": "minecraft:block/glass", "force_translucent": true }
+      const v = typeof raw === 'string' ? raw : raw && typeof raw === 'object' && typeof (raw as { sprite?: unknown }).sprite === 'string' ? (raw as { sprite: string }).sprite : null
+      if (v) textures[k] = v.startsWith('#') || v.includes(':') ? v : `${ns}:${v}`
     }
     return { textures, chain: [id, ...(parent?.chain || [])] }
   }

@@ -191,6 +191,7 @@ function onConnection(socket: net.Socket): void {
   })
   const close = (): void => {
     if (!session) return
+    assetIndexes.get(session)?.close()
     session.win?.destroy()
     sessions.delete(session.token)
     session = null
