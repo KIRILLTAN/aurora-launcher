@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
-const EVENTS = ['task:update', 'game:log', 'game:exit', 'game:state', 'instances:changed', 'update:status', 'win:maximized']
+const EVENTS = ['task:update', 'game:log', 'game:exit', 'game:state', 'instances:changed', 'update:status', 'win:maximized', 'sync:login']
 
 const api = {
   invoke: async (channel: string, ...args: unknown[]): Promise<unknown> => {

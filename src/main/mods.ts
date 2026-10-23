@@ -133,7 +133,7 @@ export function listMods(instanceId: string, withPackages = false): ModMeta[] {
   const dir = modsDir(instanceId)
   return fs
     .readdirSync(dir)
-    .filter((f) => /\.(jar|zip)(\.disabled)?$/i.test(f))
+    .filter((f) => /\.(jar|zip)(\.disabled)?$/i.test(f) && f !== 'aurora-helper.jar')
     .map((f) => {
       const m = readModMeta(path.join(dir, f))
       if (!withPackages) m.packages = []

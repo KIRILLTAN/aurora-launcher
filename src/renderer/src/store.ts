@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Account, CrashAnalysis, Instance, Task, UpdateStatus, GameLog } from '@shared/types'
+import type { Account, CrashAnalysis, Instance, Task, UpdateStatus, GameLog, SyncStatus, SyncRemoteInstance } from '@shared/types'
 import { api, type PublicSettings } from './api'
 
 export type Page = 'home' | 'library' | 'instance' | 'catalog' | 'accounts' | 'java' | 'skins' | 'settings'
@@ -23,6 +23,9 @@ interface State {
   update: UpdateStatus
   toasts: Toast[]
   createOpen: boolean
+  sync?: SyncStatus
+  cloud: SyncRemoteInstance[]
+  refreshCloud: () => Promise<void>
   go: (page: Page, instanceId?: string) => void
   refresh: () => Promise<void>
   refreshInstances: () => Promise<void>
@@ -32,7 +35,7 @@ interface State {
   dismissToast: (id: number) => void
   setCrash: (c?: State['crash']) => void
   setCreateOpen: (v: boolean) => void
-  play: (instanceId: string) => Promise<void>
+  play: (instanceId: string, server?: string) => Promise<void>
 }
 
 let toastId = 0
@@ -47,6 +50,16 @@ export const useStore = create<State>((set, get) => ({
   update: { state: 'idle' },
   toasts: [],
   createOpen: false,
+  cloud: [],
+
+  refreshCloud: async () => {
+    try {
+      const sync = await api.syncStatus()
+      set({ sync, cloud: sync.connected ? await api.syncList() : [] })
+    } catch {
+      set({ cloud: [] })
+    }
+  },
 
   go: (page, instanceId) => set({ page, openInstanceId: instanceId ?? get().openInstanceId }),
 
@@ -59,6 +72,7 @@ export const useStore = create<State>((set, get) => ({
       api.updateStatus()
     ])
     set({ settings, accounts, instances, running, update })
+    void get().refreshCloud()
     document.documentElement.dataset.accent = settings.accent
   },
   refreshInstances: async () => set({ instances: await api.instances() }),
@@ -77,7 +91,7 @@ export const useStore = create<State>((set, get) => ({
   setCrash: (crash) => set({ crash }),
   setCreateOpen: (createOpen) => set({ createOpen }),
 
-  play: async (instanceId) => {
+  play: async (instanceId, server) => {
     const { settings, accounts, toast } = get()
     const acc = settings?.selectedAccount || accounts[0]?.id
     if (!acc) {
@@ -87,7 +101,7 @@ export const useStore = create<State>((set, get) => ({
     }
     set({ logs: { ...get().logs, [instanceId]: [] } })
     try {
-      await api.launch(instanceId, acc)
+      await api.launch(instanceId, acc, server)
     } catch (e) {
       toast((e as Error).message, 'error')
     }
@@ -120,6 +134,7 @@ export function bindEvents(): () => void {
       api.running().then((running) => s.setState({ running }))
       s.getState().refreshInstances()
       if (e.analysis) s.setState({ crash: { ...e.analysis, java: e.java } })
+      setTimeout(() => s.getState().refreshCloud(), 15000)
     }),
     api.on('instances:changed', () => s.getState().refreshInstances()),
     api.on<UpdateStatus>('update:status', (update) => s.setState({ update }))

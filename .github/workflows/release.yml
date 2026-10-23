@@ -9,7 +9,11 @@ permissions:
   contents: write
 
 jobs:
+  helper:
+    uses: ./.github/workflows/helper.yml
+
   release:
+    needs: helper
     strategy:
       fail-fast: false
       matrix:
@@ -17,6 +21,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: helper-*
+          path: resources/helper
+          merge-multiple: true
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -24,5 +33,10 @@ jobs:
       - run: npm run build
       - name: Сборка установщика и публикация в GitHub Releases
         run: npx electron-builder --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Мод-помощник в релиз
+        if: matrix.os == 'ubuntu-latest'
+        run: gh release upload "${{ github.ref_name }}" resources/helper/*.jar --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

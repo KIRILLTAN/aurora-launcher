@@ -4,6 +4,7 @@ import type { FeaturedPack, Instance, RemoteInfo } from '@shared/types'
 import { api } from '../api'
 import { useStore } from '../store'
 import { InstanceIcon, loaderLabel, fmtPlaytime, timeAgo, Markdown, Spinner } from '../components/ui'
+import { ServersCard } from "../components/Servers"
 
 export default function HomePage() {
   const { instances, settings, running, play, go, setCreateOpen, toast, setSettings } = useStore()
@@ -41,6 +42,11 @@ export default function HomePage() {
           <span />
         </div>
         {remote?.motd && <div className="motd">{remote.motd}</div>}
+        {instances.length > 0 && (
+          <div className="motd" style={{ top: remote?.motd ? 44 : 22 }}>
+            Всего наиграно: <b>{fmtPlaytime(instances.reduce((s, i) => s + (i.playTime || 0), 0))}</b> · сборок: <b>{instances.length}</b>
+          </div>
+        )}
         {selected ? (
           <>
             <div className="kicker">{isRunning ? 'Сейчас в игре' : 'Готово к игре'}</div>
@@ -160,6 +166,7 @@ export default function HomePage() {
           ))}
         </div>
       </div>
+      <ServersCard instanceId={selected?.id} />
     </div>
   )
 }

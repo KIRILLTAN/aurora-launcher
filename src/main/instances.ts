@@ -50,8 +50,10 @@ function slug(name: string): string {
   return id
 }
 
-export function createInstance(data: Omit<Instance, 'id' | 'createdAt'>): Instance {
-  const inst: Instance = { ...data, id: slug(data.name), createdAt: Date.now() }
+/** fixedId — сохранить id сборки при переносе из облака */
+export function createInstance(data: Omit<Instance, 'id' | 'createdAt'>, fixedId?: string): Instance {
+  const id = fixedId && /^[^\\/:*?"<>|.][^\\/:*?"<>|]*$/.test(fixedId) && !exists(instanceDir(fixedId)) ? fixedId : slug(data.name)
+  const inst: Instance = { ...data, id, createdAt: Date.now() }
   ensureDir(gameDir(inst.id))
   return saveInstance(inst)
 }

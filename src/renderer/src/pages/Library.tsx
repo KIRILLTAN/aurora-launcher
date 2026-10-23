@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react'
-import { Plus, Play, Square, Search, Boxes, Upload } from 'lucide-react'
+import { Plus, Play, Square, Search, Boxes, Upload, Cloud } from 'lucide-react'
 import type { LoaderType } from '@shared/types'
 import { api } from '../api'
 import { useStore } from '../store'
 import { InstanceIcon, loaderLabel, timeAgo, LOADERS } from '../components/ui'
+import { PullButton } from '../components/Cloud'
 
 export default function LibraryPage() {
-  const { instances, running, play, go, setCreateOpen, toast } = useStore()
+  const { instances, running, play, go, setCreateOpen, toast, cloud } = useStore()
+  const cloudOnly = cloud.filter((c) => c.state === 'cloud')
   const [q, setQ] = useState('')
   const [loader, setLoader] = useState<LoaderType | 'all'>('all')
   const [over, setOver] = useState(false)
@@ -117,6 +119,36 @@ export default function LibraryPage() {
             Новая сборка
           </div>
         </div>
+      )}
+
+      {cloudOnly.length > 0 && (
+        <>
+          <h2 className="row" style={{ marginTop: 30, fontSize: 18 }}>
+            <Cloud size={18} /> В облаке — можно скачать на этот ПК
+          </h2>
+          <div className="grid cards">
+            {cloudOnly.map((c) => (
+              <div key={c.id} className="card inst-card" style={{ borderStyle: 'dashed' }}>
+                <div className="glow" />
+                <div className="row">
+                  <InstanceIcon inst={c} />
+                  <div className="grow">
+                    <div className="title ellipsis">{c.name}</div>
+                    <div className="small muted">с ПК {c.device} · {timeAgo(c.updatedAt)}</div>
+                  </div>
+                </div>
+                <div className="meta">
+                  <span className="chip accent">{c.mcVersion}</span>
+                  <span className="chip">{loaderLabel(c.loader)}</span>
+                  <span className="chip">{c.files} файлов</span>
+                </div>
+                <div className="bottom">
+                  <PullButton item={c} small />
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   )

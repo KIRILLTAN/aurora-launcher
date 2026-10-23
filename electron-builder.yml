@@ -7,6 +7,10 @@ directories:
 files:
   - out/**/*
   - package.json
+extraResources:
+  - from: resources/helper
+    to: helper
+    filter: ["*.jar"]
 win:
   target:
     - target: nsis

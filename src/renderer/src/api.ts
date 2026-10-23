@@ -12,7 +12,13 @@ import type {
   ModInfo,
   RemoteInfo,
   Settings,
-  UpdateStatus
+  UpdateStatus,
+  SyncStatus,
+  SyncRemoteInstance,
+  ServerStatus,
+  ModUpdate,
+  WorldInfo,
+  ScreenshotInfo
 } from '@shared/types'
 
 const call = <T,>(channel: string, ...args: unknown[]): Promise<T> => window.aurora.invoke(channel, ...args) as Promise<T>
@@ -99,6 +105,26 @@ export const api = {
   deleteSkin: (file: string) => call('skins:delete', file),
   uploadSkin: (accountId: string, data: string, slim: boolean) => call('skins:uploadMs', accountId, data, slim),
   openSkinsFolder: () => call('skins:openFolder'),
+
+  syncStatus: () => call<SyncStatus>('sync:status'),
+  syncGithubStart: () => call<{ userCode: string; uri: string }>('sync:githubStart'),
+  syncGithubToken: (token: string) => call<SyncStatus>('sync:githubToken', token),
+  syncFolder: () => call<SyncStatus>('sync:folder'),
+  syncDisconnect: () => call<SyncStatus>('sync:disconnect'),
+  syncList: () => call<SyncRemoteInstance[]>('sync:list'),
+  syncPush: (ids?: string[]) => call<{ pushed: number; missing: string[] }>('sync:push', ids),
+  syncPull: (id: string) => call<Instance>('sync:pull', id),
+  syncRemove: (id: string) => call('sync:remove', id),
+
+  helperSupported: (id: string) => call<boolean>('helper:supported', id),
+  pingServer: (address: string) => call<ServerStatus>('servers:ping', address),
+  boostFps: (id: string) => call<{ installed: string[]; skipped: string[] }>('features:boostFps', id),
+  modUpdates: (id: string) => call<ModUpdate[]>('features:modUpdates', id),
+  applyModUpdates: (id: string, updates: ModUpdate[]) => call<number>('features:applyUpdates', id, updates),
+  worlds: (id: string) => call<WorldInfo[]>('features:worlds', id),
+  backupWorld: (id: string, folder: string) => call<string>('features:backupWorld', id, folder),
+  screenshots: (id: string) => call<ScreenshotInfo[]>('features:screenshots', id),
+  showItem: (p: string) => call('shell:showItem', p),
 
   remote: () => call<RemoteInfo>('remote:info'),
   updateStatus: () => call<UpdateStatus>('update:status'),

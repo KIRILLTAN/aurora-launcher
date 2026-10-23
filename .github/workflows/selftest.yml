@@ -4,11 +4,20 @@ on:
   workflow_dispatch:
 
 jobs:
+  helper:
+    uses: ./.github/workflows/helper.yml
+
   selftest:
+    needs: helper
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: helper-*
+          path: resources/helper
+          merge-multiple: true
       - uses: actions/setup-node@v4
         with:
           node-version: 22

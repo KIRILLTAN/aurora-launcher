@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, shell, dialog, nativeTheme } from 'electro
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
-import type { Instance, Settings, CrashAnalysis, LoaderType } from '@shared/types'
+import type { Instance, Settings, CrashAnalysis, LoaderType, ModUpdate } from '@shared/types'
 import { getSettings, updateSettings, publicSettings, dirs } from './settings'
 import * as instances from './instances'
 import * as accounts from './auth/accounts'
@@ -19,6 +19,9 @@ import { askAi } from './crash/ai'
 import { getRemoteInfo, initUpdater, checkForUpdates, installUpdate, getUpdateStatus } from './remote'
 import { withTask, emit } from './events'
 import { runSelfTest } from './selftest'
+import * as sync from './sync'
+import * as features from './features'
+import { helperSupported } from './helper'
 
 let win: BrowserWindow | null = null
 
@@ -179,6 +182,31 @@ const handlers: Record<string, Handler> = {
   'skins:delete': (file: string) => skins.deleteSkin(file),
   'skins:uploadMs': (accountId: string, data: string, slim: boolean) => skins.uploadSkinMicrosoft(accountId, data, slim),
   'skins:openFolder': () => shell.openPath(dirs.skins()),
+
+  // облачная синхронизация сборок
+  'sync:status': () => sync.syncStatus(),
+  'sync:githubStart': () => sync.startGithubLogin(),
+  'sync:githubToken': (token: string) => sync.loginGithubToken(token),
+  'sync:folder': async () => {
+    const r = await dialog.showOpenDialog(win!, { title: 'Папка в облаке (Яндекс Диск, OneDrive, Google Drive…)', properties: ['openDirectory', 'createDirectory'] })
+    return r.canceled ? sync.syncStatus() : sync.useFolder(r.filePaths[0])
+  },
+  'sync:disconnect': () => sync.disconnect(),
+  'sync:list': () => sync.listRemote(),
+  'sync:push': (ids?: string[]) => sync.pushInstances(ids),
+  'sync:pull': (id: string) => sync.pullInstance(id),
+  'sync:remove': (id: string) => sync.removeRemote(id),
+
+  // дополнительные возможности
+  'helper:supported': (id: string) => helperSupported(instances.getInstance(id)),
+  'servers:ping': (address: string) => features.pingServer(address),
+  'features:boostFps': (id: string) => features.boostFps(id),
+  'features:modUpdates': (id: string) => features.checkModUpdates(id),
+  'features:applyUpdates': (id: string, updates: ModUpdate[]) => features.applyModUpdates(id, updates),
+  'features:worlds': (id: string) => features.listWorlds(id),
+  'features:backupWorld': (id: string, folder: string) => features.backupWorld(id, folder),
+  'features:screenshots': (id: string) => features.listScreenshots(id),
+  'shell:showItem': (p: string) => shell.showItemInFolder(p),
 
   // онлайн и обновления
   'remote:info': () => getRemoteInfo(),

@@ -1,18 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, Play, Square, FolderOpen, Copy, Trash2, RefreshCw, Package, Settings2, Terminal, Puzzle, Plus, Search, FileUp, Download, Image, Sun } from 'lucide-react'
-import type { Instance, JavaInstall, ModInfo } from '@shared/types'
+import { ArrowLeft, Play, Square, FolderOpen, Copy, Trash2, RefreshCw, Package, Settings2, Terminal, Puzzle, Plus, Search, FileUp, Download, Image, Sun, UploadCloud, Zap, ArrowUpCircle, Globe2, Camera, Archive, Keyboard } from "lucide-react"
+import type { Instance, JavaInstall, ModInfo, ModUpdate, WorldInfo, ScreenshotInfo } from '@shared/types'
 import { api } from '../api'
 import { useStore } from '../store'
 import { InstanceIcon, loaderLabel, fmtPlaytime, Switch, Spinner, Modal } from '../components/ui'
 import { CatalogBrowser } from './Catalog'
+import { PullButton } from "../components/Cloud"
 
-type Tab = 'mods' | 'resourcepacks' | 'shaders' | 'settings' | 'console'
+type Tab = "mods" | "resourcepacks" | "shaders" | "worlds" | "screenshots" | "settings" | "console"
 
 export default function InstancePage() {
-  const { openInstanceId, instances, running, play, go, toast } = useStore()
+  const { openInstanceId, instances, running, play, go, toast, sync, cloud, settings, refreshCloud } = useStore()
   const inst = instances.find((i) => i.id === openInstanceId)
   const [tab, setTab] = useState<Tab>('mods')
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [helperOk, setHelperOk] = useState(false)
+  useEffect(() => {
+    if (openInstanceId) api.helperSupported(openInstanceId).then(setHelperOk).catch(() => setHelperOk(false))
+  }, [openInstanceId])
 
   if (!inst) {
     return (
@@ -25,6 +30,7 @@ export default function InstancePage() {
     )
   }
   const isRun = running.includes(inst.id)
+  const remote = cloud.find((c) => c.id === inst.id)
 
   return (
     <div className="page">
@@ -40,9 +46,15 @@ export default function InstancePage() {
             <span className="chip">{loaderLabel(inst.loader)} {inst.loaderVersion || ''}</span>
             <span className="chip">Наиграно: {fmtPlaytime(inst.playTime)}</span>
             {inst.source?.name && <span className="chip">{inst.source.type}: {inst.source.name}</span>}
+            {settings?.helperEnabled && helperOk && <span className="chip ok"><Keyboard size={11} /> F6 помощник</span>}
+            {remote?.state === "synced" && <span className="chip accent">в облаке</span>}
           </div>
         </div>
         <div className="row">
+          {remote?.state === "cloud-newer" && <PullButton item={remote} />}
+          {sync?.connected && (
+            <button className="btn icon" title="Отправить в облако" onClick={() => api.syncPush([inst.id]).then(() => { toast("Сборка отправлена в облако", "success"); refreshCloud() }).catch((e) => toast(e.message, "error"))}><UploadCloud size={17} /></button>
+          )}
           <button className="btn icon" title="Открыть папку" onClick={() => api.openInstanceFolder(inst.id)}><FolderOpen size={17} /></button>
           <button className="btn icon" title="Экспорт в .mrpack" onClick={() => api.exportInstance(inst.id).then((ok) => ok && toast('Сборка экспортирована', 'success')).catch((e) => toast(e.message, 'error'))}><Download size={17} /></button>
           <button className="btn icon" title="Дублировать" onClick={() => api.duplicateInstance(inst.id).then(() => toast('Копия создана', 'success'))}><Copy size={17} /></button>
@@ -60,6 +72,8 @@ export default function InstancePage() {
         {inst.loader !== 'vanilla' && <button className={tab === 'mods' ? 'active' : ''} onClick={() => setTab('mods')}><Puzzle size={15} /> Моды</button>}
         <button className={tab === 'resourcepacks' ? 'active' : ''} onClick={() => setTab('resourcepacks')}><Image size={15} /> Ресурспаки</button>
         <button className={tab === 'shaders' ? 'active' : ''} onClick={() => setTab('shaders')}><Sun size={15} /> Шейдеры</button>
+        <button className={tab === "worlds" ? "active" : ""} onClick={() => setTab("worlds")}><Globe2 size={15} /> Миры</button>
+        <button className={tab === "screenshots" ? "active" : ""} onClick={() => setTab("screenshots")}><Camera size={15} /> Скриншоты</button>
         <button className={tab === 'settings' ? 'active' : ''} onClick={() => setTab('settings')}><Settings2 size={15} /> Настройки</button>
         <button className={tab === 'console' ? 'active' : ''} onClick={() => setTab('console')}><Terminal size={15} /> Консоль {isRun && <span className="chip ok">live</span>}</button>
       </div>
@@ -68,6 +82,8 @@ export default function InstancePage() {
       {tab === 'mods' && inst.loader === 'vanilla' && <SettingsTab inst={inst} />}
       {tab === 'resourcepacks' && <ContentTab inst={inst} type="resourcepack" folder="resourcepacks" />}
       {tab === 'shaders' && <ContentTab inst={inst} type="shader" folder="shaderpacks" />}
+      {tab === "worlds" && <WorldsTab inst={inst} />}
+      {tab === "screenshots" && <ScreenshotsTab inst={inst} />}
       {tab === 'settings' && <SettingsTab inst={inst} />}
       {tab === 'console' && <ConsoleTab inst={inst} />}
 
@@ -97,6 +113,9 @@ function ModsTab({ inst }: { inst: Instance }) {
   const [mods, setMods] = useState<ModInfo[] | null>(null)
   const [q, setQ] = useState('')
   const [adding, setAdding] = useState(false)
+  const [boosting, setBoosting] = useState(false)
+  const [checking, setChecking] = useState(false)
+  const [updates, setUpdates] = useState<ModUpdate[] | null>(null)
   const load = (): void => void api.mods(inst.id).then(setMods).catch((e) => toast(e.message, 'error'))
   useEffect(load, [inst.id])
 
@@ -119,6 +138,54 @@ function ModsTab({ inst }: { inst: Instance }) {
         }}><FileUp size={15} /> Из файла</button>
         <button className="btn primary" onClick={() => setAdding(true)}><Plus size={15} /> Добавить моды</button>
       </div>
+      <div className="row wrap" style={{ marginBottom: 14 }}>
+        <button className="btn sm" disabled={boosting} onClick={async () => {
+          setBoosting(true)
+          try {
+            const r = await api.boostFps(inst.id)
+            toast(r.installed.length ? `Установлено для FPS: ${r.installed.join(', ')}` : 'Всё уже установлено', 'success')
+            load()
+          } catch (e) {
+            toast((e as Error).message, 'error')
+          } finally {
+            setBoosting(false)
+          }
+        }}>{boosting ? <Spinner /> : <Zap size={14} />} Ускорить FPS</button>
+        <button className="btn sm" disabled={checking} onClick={async () => {
+          setChecking(true)
+          try {
+            const u = await api.modUpdates(inst.id)
+            setUpdates(u)
+            if (!u.length) toast('Все моды последних версий', 'success')
+          } catch (e) {
+            toast((e as Error).message, 'error')
+          } finally {
+            setChecking(false)
+          }
+        }}>{checking ? <Spinner /> : <ArrowUpCircle size={14} />} Проверить обновления</button>
+        <span className="small muted">«Ускорить FPS» ставит Sodium/Embeddium, Lithium, FerriteCore, EntityCulling и другие оптимизации</span>
+      </div>
+      {updates && updates.length > 0 && (
+        <div className="card pad" style={{ marginBottom: 14, background: 'rgba(56,198,255,0.06)' }}>
+          <div className="row" style={{ marginBottom: 8 }}>
+            <ArrowUpCircle size={18} color="var(--a2)" />
+            <b className="grow">Доступны обновления: {updates.length}</b>
+            <button className="btn sm primary" onClick={async () => {
+              try {
+                await api.applyModUpdates(inst.id, updates)
+                toast(`Обновлено модов: ${updates.length}`, 'success')
+                setUpdates(null)
+                load()
+              } catch (e) {
+                toast((e as Error).message, 'error')
+              }
+            }}>Обновить все</button>
+          </div>
+          {updates.map((u) => (
+            <div key={u.file} className="small muted">{u.file} → <span style={{ color: 'var(--text)' }}>{u.version}</span></div>
+          ))}
+        </div>
+      )}
       {!mods && <div className="row muted"><Spinner /> Чтение модов…</div>}
       {mods && mods.length === 0 && (
         <div className="empty">
@@ -284,6 +351,79 @@ function ConsoleTab({ inst }: { inst: Instance }) {
           <div key={i} className={l.level || 'info'}>{l.line}</div>
         ))}
       </div>
+    </div>
+  )
+}
+
+function WorldsTab({ inst }: { inst: Instance }) {
+  const { toast, play } = useStore()
+  const [worlds, setWorlds] = useState<WorldInfo[] | null>(null)
+  useEffect(() => {
+    api.worlds(inst.id).then(setWorlds).catch((e) => toast(e.message, 'error'))
+  }, [inst.id])
+  return (
+    <div className="card pad">
+      <div className="row" style={{ marginBottom: 12 }}>
+        <span className="muted">Миры сборки и их резервные копии</span>
+        <span className="grow" />
+        <button className="btn" onClick={() => api.openInstanceFolder(inst.id, 'saves')}><FolderOpen size={15} /> Папка миров</button>
+        <button className="btn" onClick={() => api.openInstanceFolder(inst.id, '../backups')}><Archive size={15} /> Бэкапы</button>
+      </div>
+      {!worlds && <div className="row muted"><Spinner /> Загрузка…</div>}
+      {worlds?.length === 0 && (
+        <div className="empty">
+          <Globe2 size={44} />
+          <h3>Миров пока нет</h3>
+          <div>Создайте мир в игре — он появится здесь</div>
+          <button className="btn primary" onClick={() => play(inst.id)}><Play size={15} fill="currentColor" /> Играть</button>
+        </div>
+      )}
+      <div className="list">
+        {worlds?.map((w) => (
+          <div key={w.folder} className="list-row">
+            {w.icon ? <img src={w.icon} style={{ width: 48, height: 48, borderRadius: 10, imageRendering: 'pixelated' }} /> : <div className="inst-icon"><Globe2 size={20} /></div>}
+            <div className="grow">
+              <b>{w.folder}</b>
+              <div className="small muted">
+                {new Date(w.lastPlayed).toLocaleString('ru-RU')} · {(w.size / 1048576).toFixed(1)} МБ
+              </div>
+            </div>
+            <button className="btn sm" onClick={() => api.backupWorld(inst.id, w.folder).then((p) => { toast('Бэкап сохранён', 'success'); api.showItem(p) }).catch((e) => toast(e.message, 'error'))}>
+              <Archive size={14} /> Бэкап
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function ScreenshotsTab({ inst }: { inst: Instance }) {
+  const { toast } = useStore()
+  const [shots, setShots] = useState<ScreenshotInfo[] | null>(null)
+  const [open, setOpen] = useState<ScreenshotInfo | null>(null)
+  useEffect(() => {
+    api.screenshots(inst.id).then(setShots).catch((e) => toast(e.message, 'error'))
+  }, [inst.id])
+  return (
+    <div className="card pad">
+      <div className="row" style={{ marginBottom: 12 }}>
+        <span className="muted">Скриншоты делаются в игре клавишей <span className="kbd">F2</span></span>
+        <span className="grow" />
+        <button className="btn" onClick={() => api.openInstanceFolder(inst.id, 'screenshots')}><FolderOpen size={15} /> Папка</button>
+      </div>
+      {!shots && <div className="row muted"><Spinner /> Загрузка…</div>}
+      {shots?.length === 0 && <div className="empty"><Camera size={44} /><h3>Скриншотов нет</h3></div>}
+      <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
+        {shots?.map((s) => (
+          <img key={s.file} src={s.thumb} title={s.file} onClick={() => setOpen(s)} style={{ width: '100%', aspectRatio: '16/9', objectFit: 'cover', borderRadius: 12, cursor: 'zoom-in', border: '1px solid var(--border)' }} />
+        ))}
+      </div>
+      {open && (
+        <Modal title={open.file} size="wide" onClose={() => setOpen(null)} footer={<button className="btn" onClick={() => api.showItem(open.path)}><FolderOpen size={15} /> Показать в папке</button>}>
+          <img src={open.thumb} style={{ width: '100%', borderRadius: 12, imageRendering: 'auto' }} />
+        </Modal>
+      )}
     </div>
   )
 }

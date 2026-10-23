@@ -2,7 +2,8 @@ import fs from 'fs'
 import path from 'path'
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { addOffline } from './auth/accounts'
-import { createInstance, getInstance } from './instances'
+import { createInstance, getInstance, gameDir, deleteInstance } from './instances'
+import { useFolder, pushInstances, listRemote, pullInstance } from './sync'
 import { ensureInstalled, launchInstance, stopInstance } from './minecraft/launch'
 import { TaskHandle } from './events'
 import { updateSettings } from './settings'
@@ -29,7 +30,7 @@ export async function runSelfTest(win: BrowserWindow, outDir: string): Promise<v
   const go = (page: string): Promise<unknown> => win.webContents.executeJavaScript(`window.__aurora.getState().go(${JSON.stringify(page)})`)
 
   try {
-    updateSettings({ afterLaunch: 'keep' })
+    updateSettings({ afterLaunch: 'keep', helperEnabled: true, servers: [{ name: 'Hypixel', address: 'mc.hypixel.net' }] })
     const acc = addOffline('AuroraTest')
     await wait(4000)
     await win.webContents.executeJavaScript('window.__aurora.getState().refresh()')
@@ -90,6 +91,9 @@ export async function runSelfTest(win: BrowserWindow, outDir: string): Promise<v
     log('launch-fabric-1.21.1', res)
     await wait(20000)
     await shot('during-game')
+    log('helper', lines.some((l) => l.includes('Aurora Helper loaded')) ? 'ok' : 'НЕ загрузился')
+    const helperErr = lines.find((l) => /aurora_helper|AuroraHelper/.test(l) && /error|fail/i.test(l))
+    if (helperErr) log('helper-error', helperErr)
     fs.writeFileSync(path.join(outDir, 'game.log'), lines.join('\n'))
     stopInstance(vanilla.id)
     await wait(5000)
@@ -107,6 +111,32 @@ export async function runSelfTest(win: BrowserWindow, outDir: string): Promise<v
     log('crash-analysis', ex.analysis ? `${ex.analysis.title} | ${ex.analysis.causes.map((c) => c.title).join(' ; ')} | mods: ${ex.analysis.suspectedMods.join(', ')}` : 'нет анализа')
     await wait(3000)
     await shot('dialog-crash')
+
+    // Синхронизация через облачную папку: отправить, удалить локально, скачать обратно
+    await win.webContents.executeJavaScript('window.__aurora.getState().setCrash(undefined)')
+    const syncInst = createInstance({ name: 'Тест синк', mcVersion: '1.21.1', loader: 'fabric' })
+    await installModrinthProject(syncInst.id, 'lithium', 'mod')
+    fs.mkdirSync(path.join(gameDir(syncInst.id), 'config'), { recursive: true })
+    fs.writeFileSync(path.join(gameDir(syncInst.id), 'config', 'aurora-test.txt'), 'привет из облака')
+    fs.writeFileSync(path.join(gameDir(syncInst.id), 'mods', 'my-local-mod.jar'), 'not a real jar')
+    useFolder(path.join(outDir, 'cloud'))
+    const pushed = await pushInstances([syncInst.id])
+    deleteInstance(syncInst.id)
+    const state = (await listRemote()).find((r) => r.id === syncInst.id)?.state
+    const pulled = await pullInstance(syncInst.id)
+    const mods = fs.readdirSync(path.join(gameDir(pulled.id), 'mods'))
+    const cfg = fs.readFileSync(path.join(gameDir(pulled.id), 'config', 'aurora-test.txt'), 'utf8')
+    log('sync', `pushed=${pushed.pushed} state=${state} sameId=${pulled.id === syncInst.id} mods=${mods.join(',')} config=${cfg}`)
+    await win.webContents.executeJavaScript('window.__aurora.getState().refresh()')
+    await go('accounts')
+    await wait(4000)
+    await shot('page-accounts-cloud')
+    await go('library')
+    await wait(2500)
+    await shot('page-library-cloud')
+    await go('home')
+    await wait(6000)
+    await shot('page-home-servers')
   } catch (e) {
     log('fatal', (e as Error).stack || String(e))
   }

@@ -12,6 +12,8 @@ import { analyzeCrash } from '../crash/analyzer'
 import { cachedJavas, detectJavas, installJava, launchBinary, pickJava, probeJava, requiredJavaMajor } from '../java/java'
 import { installVersion, collectLibraries, clientJarPath, nativesDir, ensureAuthlibInjector } from './install'
 import { installLoader } from './loaders'
+import { applyHelper } from '../helper'
+import { autoPush } from '../sync'
 import { resolveVersion, rulesAllow, type Argument, type ResolvedVersion } from './versions'
 
 interface Running {
@@ -150,6 +152,8 @@ export async function launchInstance(id: string, accountId: string | undefined, 
     const java = await resolveJava(inst, required, task)
 
     const gdir = gameDir(id)
+    task.detail('Подготовка модов')
+    await applyHelper(inst)
     const libs = collectLibraries(v)
     const jar = clientJarPath(v.id)
     const classpath = [...libs.classpath.filter((p) => exists(p)), exists(jar) ? jar : clientJarPath(v.rootId)]
@@ -266,6 +270,7 @@ export async function launchInstance(id: string, accountId: string | undefined, 
         }
       }
       emit('game:exit', { instanceId: id, code, analysis, java: `${java.version} (${java.path})` })
+      void autoPush(id)
     })
   } catch (e) {
     task.fail(e)

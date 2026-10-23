@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { FolderOpen, Github, RefreshCw, KeyRound, Sparkles, MemoryStick, Palette, Rocket, ExternalLink } from 'lucide-react'
+import { FolderOpen, Github, RefreshCw, KeyRound, Sparkles, MemoryStick, Palette, Rocket, ExternalLink, Keyboard } from 'lucide-react'
 import type { Settings } from '@shared/types'
 import { api } from '../api'
 import { useStore } from '../store'
@@ -51,6 +51,17 @@ export default function SettingsPage() {
                 <span className="small muted">{a.label}</span>
               </div>
             ))}
+          </div>
+          <div className="divider" />
+          <h3 className="row"><Keyboard size={17} /> Кастомный помощник в игре</h3>
+          <div className="setting-row">
+            <div className="text">
+              <b>Aurora Helper — меню по F6</b>
+              <span>
+                В игре нажмите <span className="kbd">F6</span>: список лута на земле с расстоянием и стрелкой-направлением, координаты, FPS, часы. Работает в сборках Fabric и Quilt для Minecraft 1.20.1 и 1.21.1 — мод добавляется сам при запуске.
+              </span>
+            </div>
+            <Switch on={settings.helperEnabled} onChange={(v) => patch({ helperEnabled: v })} />
           </div>
           <div className="divider" />
           <h3 className="row"><Rocket size={17} /> Запуск</h3>
@@ -191,6 +202,10 @@ export default function SettingsPage() {
           <div className="field" style={{ marginTop: 12 }}>
             <label>Свой Azure Client ID для входа Microsoft (необязательно)</label>
             <input className="input mono" defaultValue={settings.msClientId} placeholder="по умолчанию — встроенный" onBlur={(e) => patch({ msClientId: e.target.value.trim() })} />
+          </div>
+          <div className="field" style={{ marginTop: 12 }}>
+            <label>GitHub OAuth Client ID для облака (кнопка «Войти через GitHub»)</label>
+            <input className="input mono" defaultValue={settings.githubClientId} placeholder="Ov23li…" onBlur={(e) => patch({ githubClientId: e.target.value.trim() })} />
           </div>
           <div className="row" style={{ marginTop: 14 }}>
             <button className="btn" onClick={() => api.openUrl('https://github.com/KIRILLTAN/aurora-launcher')}><Github size={15} /> Страница проекта</button>

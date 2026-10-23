@@ -9,4 +9,4 @@ Thumbs.db
 
 helper-mod/build/
 helper-mod/.gradle/
-resources/helper/
+resources/helper/*.jar

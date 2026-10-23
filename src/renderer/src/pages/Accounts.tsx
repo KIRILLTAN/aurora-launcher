@@ -4,6 +4,7 @@ import type { AccountType } from '@shared/types'
 import { api } from '../api'
 import { useStore } from '../store'
 import { AccountAvatar, ACCOUNT_LABEL, Modal, Spinner } from '../components/ui'
+import { CloudCard } from '../components/Cloud'
 
 const KINDS: { id: AccountType; title: string; desc: string; icon: typeof Globe; color: string }[] = [
   { id: 'microsoft', title: 'Microsoft', desc: 'Лицензия Minecraft: Java Edition. Онлайн-серверы, скины, Realms.', icon: ShieldCheck, color: '#3cc8ff' },
@@ -72,6 +73,8 @@ export default function AccountsPage() {
           </div>
         </div>
       )}
+
+      <CloudCard />
 
       {adding === 'pick' && (
         <Modal title="Тип аккаунта" onClose={() => setAdding(null)}>

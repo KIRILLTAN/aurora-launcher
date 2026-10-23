@@ -24,7 +24,11 @@ function defaults(): Settings {
     autoUpdate: true,
     autoJava: true,
     msClientId: '',
-    githubRepo: 'KIRILLTAN/aurora-launcher'
+    githubRepo: 'KIRILLTAN/aurora-launcher',
+    helperEnabled: false,
+    syncAuto: true,
+    githubClientId: '',
+    servers: []
   }
 }
 

@@ -23,6 +23,8 @@ export interface Instance {
   height?: number
   fullscreen?: boolean
   source?: { type: 'modrinth' | 'curseforge' | 'file' | 'github'; projectId?: string; versionId?: string; name?: string }
+  /** когда сборка последний раз совпадала с облаком */
+  syncedAt?: number
 }
 
 export type AccountType = 'microsoft' | 'offline' | 'elyby' | 'yggdrasil'
@@ -60,6 +62,12 @@ export interface Settings {
   autoJava: boolean
   msClientId: string
   githubRepo: string
+  /** мод-помощник Aurora Helper (F6) */
+  helperEnabled: boolean
+  /** автоотправка сборки в облако после игры */
+  syncAuto: boolean
+  githubClientId: string
+  servers: SavedServer[]
 }
 
 export interface Task {
@@ -191,4 +199,66 @@ export interface GameLog {
   instanceId: string
   line: string
   level?: 'info' | 'warn' | 'error'
+}
+
+export interface SyncStatus {
+  connected: boolean
+  provider?: 'github' | 'folder'
+  login?: string
+  avatar?: string
+  folder?: string
+  lastSync?: number
+  device: string
+  githubLoginAvailable: boolean
+}
+
+export interface SyncRemoteInstance {
+  id: string
+  name: string
+  mcVersion: string
+  loader: LoaderType
+  loaderVersion?: string
+  icon?: string
+  updatedAt: number
+  device: string
+  files: number
+  state?: 'cloud' | 'synced' | 'cloud-newer'
+}
+
+export interface SavedServer {
+  name: string
+  address: string
+}
+
+export interface ServerStatus {
+  online: boolean
+  latency?: number
+  players?: number
+  maxPlayers?: number
+  version?: string
+  motd?: string
+  favicon?: string
+  error?: string
+}
+
+export interface ModUpdate {
+  file: string
+  newFile: string
+  version: string
+  url: string
+  sha1: string
+}
+
+export interface WorldInfo {
+  folder: string
+  lastPlayed: number
+  size: number
+  icon?: string
+}
+
+export interface ScreenshotInfo {
+  file: string
+  path: string
+  time: number
+  thumb: string
 }
