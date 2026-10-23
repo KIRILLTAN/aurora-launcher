@@ -15,7 +15,7 @@ import { installVersion, collectLibraries, clientJarPath, nativesDir, ensureAuth
 import { installLoader } from './loaders'
 import { optimizedJvmArgs, autoMemory } from './jvm'
 import { removeLegacyHelper } from '../helper'
-import { prepareOverlay } from '../overlay'
+import { asciiPath, prepareOverlay } from '../overlay'
 import { mainWindow } from '../events'
 import { autoPush } from '../sync'
 import { resolveVersion, rulesAllow, type Argument, type ResolvedVersion } from './versions'
@@ -227,7 +227,7 @@ export async function launchInstance(id: string, accountId: string | undefined, 
     if (auth.injector) {
       task.detail('Подготовка authlib-injector')
       const injector = await ensureAuthlibInjector()
-      jvm.push(`-javaagent:${injector}=${auth.injector}`, '-Dauthlibinjector.side=client')
+      jvm.push(`-javaagent:${asciiPath(injector)}=${auth.injector}`, '-Dauthlibinjector.side=client')
     }
     if (v.logging?.client?.argument) {
       const logCfg = path.join(assetsRoot, 'log_configs', v.logging.client.file.id)

@@ -20,7 +20,7 @@ import { getRemoteInfo, initUpdater, checkForUpdates, installUpdate, getUpdateSt
 import { withTask, withCancellableTask, emit, cancelTask, setMainWindow } from './events'
 import { overlayIcon, shutdownOverlay } from './overlay'
 import { applyProxy, testConnection } from './util/net'
-import { runSelfTest } from './selftest'
+import { runSelfTest, runAutoTest } from './selftest'
 import * as sync from './sync'
 import * as features from './features'
 import * as importer from './importer'
@@ -269,6 +269,8 @@ if (!app.requestSingleInstanceLock()) {
       const w = win
       w.webContents.once('did-finish-load', () => void runSelfTest(w, selftest))
     }
+    const autotest = process.env['AURORA_AUTOTEST']
+    if (autotest && win) win.webContents.once('did-finish-load', () => void runAutoTest(autotest, process.env['AURORA_AUTOTEST_OUT'] || path.join(app.getPath('temp'), 'aurora-autotest.json')))
     initUpdater()
     // первичный поиск Java в фоне
     java.detectJavas().catch(() => undefined)

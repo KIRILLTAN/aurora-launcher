@@ -7,11 +7,12 @@ import type { Task } from '@shared/types'
 import { createInstance, getInstance, gameDir, deleteInstance, listInstances } from './instances'
 import { inspectImport, importInstance } from './importer'
 import { useFolder, pushInstances, listRemote, pullInstance } from './sync'
-import { ensureInstalled, launchInstance, stopInstance } from './minecraft/launch'
+import { ensureInstalled, launchInstance, stopInstance, runningIds, getLog } from './minecraft/launch'
 import { TaskHandle, cancelTask } from './events'
-import { updateSettings } from './settings'
+import { getSettings, updateSettings } from './settings'
 import { modrinthVersions } from './catalog/modrinth'
 import { overlaySelfTest } from './selftestOverlay'
+import { overlayDiagnostics } from './overlay'
 import { listMods, toggleMod } from './mods'
 import { installModrinthProject, installModrinthPack } from './catalog/modpacks'
 
@@ -206,5 +207,70 @@ export async function runSelfTest(win: BrowserWindow, outDir: string): Promise<v
     if ((e as Error).message !== 'stop') log('fatal', (e as Error).stack || String(e))
   }
   ipcMain.removeAllListeners()
+  app.exit(0)
+}
+
+/**
+ * Проверка помощника на ПК пользователя (AURORA_AUTOTEST=<id сборки>|<мир>, AURORA_AUTOTEST_OUT=<файл>):
+ * запускает копию сборки в полноэкранном режиме, ждёт игрока в мире и записывает состояние оверлея.
+ * Настройки и миры самой сборки не меняются: работа идёт с копией, которая потом удаляется.
+ */
+export async function runAutoTest(spec: string, outFile: string): Promise<void> {
+  const [id, world] = spec.split('|')
+  const res: Record<string, unknown> = {}
+  const save = (): void => fs.writeFileSync(outFile, JSON.stringify(res, null, 2))
+  const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+  let copyId: string | null = null
+  try {
+    const src = getInstance(id)
+    const copy = createInstance({ ...src, name: 'Aurora тест помощника', lastPlayed: undefined, playTime: 0, gameArgs: world ? `--quickPlaySingleplayer "${world}"` : src.gameArgs })
+    copyId = copy.id
+    const sg = gameDir(id)
+    const dg = gameDir(copy.id)
+    for (const d of ['mods', 'config', 'resourcepacks', 'shaderpacks', 'defaultconfigs', 'kubejs']) {
+      if (fs.existsSync(path.join(sg, d))) fs.cpSync(path.join(sg, d), path.join(dg, d), { recursive: true })
+    }
+    if (world) fs.cpSync(path.join(sg, 'saves', world), path.join(dg, 'saves', world), { recursive: true })
+    const opts = fs.existsSync(path.join(sg, 'options.txt')) ? fs.readFileSync(path.join(sg, 'options.txt'), 'utf8') : ''
+    fs.writeFileSync(path.join(dg, 'options.txt'), opts.split(/\r?\n/).filter((l) => !/^fullscreen:/.test(l)).concat('fullscreen:true').join('\n'))
+    const acc = getSettings().selectedAccount
+    if (!acc) throw new Error('нет выбранного аккаунта')
+    res.started = new Date().toISOString()
+    save()
+    await launchInstance(copy.id, acc)
+    const until = Date.now() + 8 * 60_000
+    while (Date.now() < until) {
+      const d = overlayDiagnostics().find((x) => x.instance === copy.id)
+      res.diag = d ? { ...d, last: undefined } : null
+      res.last = d?.last
+      save()
+      if ((d?.last as { inGame?: boolean } | undefined)?.inGame && d?.visible) break
+      await wait(2000)
+    }
+    await wait(10000)
+    const d = overlayDiagnostics().find((x) => x.instance === copy.id)
+    res.final = d ? { ...d, last: undefined } : null
+    res.last = d?.last
+    res.log = getLog(copy.id).filter((l) => /Aurora/.test(l))
+    res.ready = new Date().toISOString()
+    save()
+    // время для скриншота экрана
+    await wait(25000)
+  } catch (e) {
+    res.error = (e as Error).stack || String(e)
+    save()
+  }
+  if (copyId) {
+    stopInstance(copyId)
+    for (let i = 0; i < 60 && runningIds().includes(copyId); i++) await wait(1000)
+    await wait(3000)
+    try {
+      deleteInstance(copyId)
+    } catch {
+      /* удалим при следующем запуске */
+    }
+  }
+  res.done = true
+  save()
   app.exit(0)
 }

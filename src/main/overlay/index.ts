@@ -45,6 +45,7 @@ interface Session {
   win?: BrowserWindow
   last?: Snapshot
   bounds?: string
+  borderless?: string
 }
 
 interface Snapshot {
@@ -54,6 +55,8 @@ interface Snapshot {
   screen?: boolean
   hideGui?: boolean
   inGame?: boolean
+  /** состояние «полного экрана без рамки» от агента */
+  bl?: string
 }
 
 let server: net.Server | null = null
@@ -82,6 +85,25 @@ async function agentJar(): Promise<string | null> {
   }
 }
 
+/** Путь без не-ASCII символов: при необходимости копируем файл в C:\ProgramData (или другую ASCII-папку). */
+export function asciiPath(file: string): string {
+  if (/^[ -~]*$/.test(file)) return file
+  const roots = [process.env['ProgramData'], process.env['PUBLIC'], process.env['SystemDrive'] ? process.env['SystemDrive'] + '\\' : undefined, app.getPath('temp')]
+  for (const root of roots) {
+    if (!root || !/^[ -~]*$/.test(root)) continue
+    try {
+      const dir = ensureDir(path.join(root, 'AuroraLauncher'))
+      const dst = path.join(dir, path.basename(file))
+      const src = fs.statSync(file)
+      if (!exists(dst) || fs.statSync(dst).size !== src.size) fs.copyFileSync(file, dst)
+      return dst
+    } catch {
+      /* нет прав — пробуем следующую папку */
+    }
+  }
+  return file
+}
+
 function ensureServer(): Promise<void> {
   if (server) return Promise.resolve()
   return new Promise((resolve, reject) => {
@@ -105,7 +127,10 @@ export async function prepareOverlay(inst: Instance, v: ResolvedVersion): Promis
   const token = crypto.randomBytes(12).toString('hex')
   sessions.set(token, { token, instance: inst, rootId: v.rootId })
   const flags = overlayConfig().borderless ? 'b' : ''
-  return { arg: `-javaagent:${jar}=${port}|${token}|${map.file}|${flags}` }
+  // Java на Windows портит не-ASCII символы в аргументах агента («D:\Новая папка» → «D:\????? ?????»),
+  // поэтому путь к маппингам передаём в base64, а сам jar — только по ASCII-пути
+  const mapArg = 'b64:' + Buffer.from(map.file, 'utf8').toString('base64url')
+  return { arg: `-javaagent:${asciiPath(jar)}=${port}|${token}|${mapArg}|${flags}` }
 }
 
 function onConnection(socket: net.Socket): void {
@@ -121,7 +146,7 @@ function onConnection(socket: net.Socket): void {
       buf = buf.slice(nl + 1)
       if (!session) {
         try {
-          const hello = JSON.parse(line) as { t: string; token: string; missing: string[] }
+          const hello = JSON.parse(line) as { t: string; token: string; missing: string[]; error?: string }
           session = sessions.get(hello.token) || null
           if (!session) return socket.destroy()
           session.socket = socket
@@ -135,7 +160,8 @@ function onConnection(socket: net.Socket): void {
                 ? `[Aurora] Помощник F6 подключён, но не нашёл в игре: ${hello.missing.join(', ')}`
                 : '[Aurora] Помощник F6 подключён — нажмите F6 в игре',
               level: hello.missing.length ? 'warn' : 'info'
-            }
+            },
+            ...(hello.error ? [{ instanceId: session.instance.id, line: `[Aurora] Помощник: ${hello.error}`, level: 'warn' as const }] : [])
           ])
           openWindow(session)
           registerKeys()
@@ -204,6 +230,10 @@ function onSnapshot(s: Session, line: string): void {
   }
   s.last = snap
   s.snapshots = (s.snapshots || 0) + 1
+  if (snap.bl && snap.bl !== s.borderless) {
+    s.borderless = snap.bl
+    emit('game:log', [{ instanceId: s.instance.id, line: `[Aurora] Полный экран для помощника: ${snap.bl}`, level: 'info' }])
+  }
   if (snap.win && snap.win.length >= 4 && snap.win[2] > 0) {
     const [x, y, w, h] = snap.win
     let rect = { x: Math.round(x), y: Math.round(y), width: Math.round(w), height: Math.round(h) }

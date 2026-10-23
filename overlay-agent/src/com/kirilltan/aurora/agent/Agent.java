@@ -183,6 +183,42 @@ public final class Agent {
         }
     }
 
+    /** Первый найденный метод из вариантов имени (имена меняются между версиями игры). */
+    private static Object callAny(Object target, String moj, String[] names, Object... args) {
+        for (String n : names) {
+            if (methodQuiet(moj, n, args.length) != null) return call(target, moj, n, args);
+        }
+        return null;
+    }
+
+    private static Method methodQuiet(String moj, String name, int argc) {
+        boolean had = missing.contains(moj + "." + name);
+        Method m = method(moj, name, argc);
+        if (m == null && !had) missing.remove(moj + "." + name);
+        return m;
+    }
+
+    private static Field fieldQuiet(String moj, String name) {
+        boolean had = missing.contains(moj + "." + name);
+        Field f = field(moj, name);
+        if (f == null && !had) missing.remove(moj + "." + name);
+        return f;
+    }
+
+    private static Object screenOf(Object mc) {
+        if (fieldQuiet(MC, "screen") != null) return get(mc, MC, "screen");
+        // 26.x: экран переехал в Gui
+        Object gui = get(mc, MC, "gui");
+        if (gui == null) return null;
+        if (methodQuiet(GUI, "screen", 0) != null) return call(gui, GUI, "screen");
+        return get(gui, GUI, "screen");
+    }
+
+    private static Object cameraOf(Object mc) {
+        Object gr = get(mc, MC, "gameRenderer");
+        return gr == null ? null : callAny(gr, GAME_RENDERER, new String[]{"getMainCamera", "mainCamera"});
+    }
+
     private static double num(Object o) {
         return o instanceof Number ? ((Number) o).doubleValue() : Double.NaN;
     }
@@ -205,6 +241,8 @@ public final class Agent {
     private static final String OPTION_INSTANCE = "net.minecraft.client.OptionInstance";
     private static final String WINDOW = "com.mojang.blaze3d.platform.Window";
     private static final String SLOT = "net.minecraft.world.entity.EquipmentSlot";
+    private static final String GUI = "net.minecraft.client.gui.Gui";
+    private static final String ITEM = "net.minecraft.world.item.Item";
 
     // ---------------- Главный цикл ----------------
 
@@ -212,7 +250,19 @@ public final class Agent {
         String[] a = args.split("\\|");
         int port = Integer.parseInt(a[0]);
         String token = a.length > 1 ? a[1] : "";
-        if (a.length > 2) loadMappings(a[2]);
+        // путь к маппингам приходит в base64: Java на Windows портит не-ASCII символы в аргументах агента
+        String mapError = null;
+        if (a.length > 2 && !a[2].isEmpty()) {
+            String mapFile = a[2].startsWith("b64:")
+                    ? new String(java.util.Base64.getUrlDecoder().decode(a[2].substring(4)), StandardCharsets.UTF_8)
+                    : a[2];
+            try {
+                loadMappings(mapFile);
+            } catch (Throwable e) {
+                mapError = String.valueOf(e);
+                System.err.println("[AuroraOverlay] маппинги: " + e);
+            }
+        }
         boolean borderlessWanted = a.length > 3 && a[3].contains("b") && !System.getProperty("os.name", "").toLowerCase().contains("mac");
 
         // ждём, пока игра загрузится
@@ -230,7 +280,8 @@ public final class Agent {
         OutputStream out = socket.getOutputStream();
         // заранее находим всё, чтобы лаунчер знал, чего не хватает
         warmup();
-        send(out, "{\"t\":\"hello\",\"token\":" + str(token) + ",\"missing\":" + strList(new ArrayList<>(missing)) + "}");
+        send(out, "{\"t\":\"hello\",\"token\":" + str(token) + ",\"missing\":" + strList(new ArrayList<>(missing))
+                + (mapError != null ? ",\"error\":" + str("маппинги: " + mapError) : "") + "}");
 
         final AtomicReference<String> latest = new AtomicReference<>();
         final AtomicBoolean pending = new AtomicBoolean(false);
@@ -244,6 +295,7 @@ public final class Agent {
                     try {
                         Fullscreen.check(game);
                     } catch (Throwable e) {
+                        Fullscreen.status = "ошибка: " + e;
                         System.err.println("[AuroraOverlay] borderless: " + e);
                     }
                 });
@@ -276,7 +328,6 @@ public final class Agent {
         field(MC, "level");
         field(MC, "options");
         field(MC, "gameRenderer");
-        field(MC, "screen");
         method(MC, "getWindow", 0);
         method(MC, "isWindowActive", 0);
         method(ENTITY, "getX", 0);
@@ -287,13 +338,15 @@ public final class Agent {
         method(ITEM_ENTITY, "getItem", 0);
         method(STACK, "getCount", 0);
         method(STACK, "getHoverName", 0);
-        method(STACK, "getDescriptionId", 0);
         method(CLEVEL, "entitiesForRendering", 0);
-        method(GAME_RENDERER, "getMainCamera", 0);
-        method(CAMERA, "getYRot", 0);
-        method(CAMERA, "getXRot", 0);
         method(WINDOW, "getScreenWidth", 0);
         method(WINDOW, "getScreenHeight", 0);
+        // члены с разными именами в разных версиях: ошибка, только если нет ни одного варианта
+        if (fieldQuiet(MC, "screen") == null && fieldQuiet(MC, "gui") == null) missing.add(MC + ".screen");
+        if (methodQuiet(STACK, "getDescriptionId", 0) == null && methodQuiet(ITEM, "getDescriptionId", 0) == null) missing.add(STACK + ".getDescriptionId");
+        if (methodQuiet(GAME_RENDERER, "getMainCamera", 0) == null && methodQuiet(GAME_RENDERER, "mainCamera", 0) == null) missing.add(GAME_RENDERER + ".getMainCamera");
+        if (methodQuiet(CAMERA, "getYRot", 0) == null && methodQuiet(CAMERA, "yRot", 0) == null) missing.add(CAMERA + ".getYRot");
+        if (methodQuiet(CAMERA, "getXRot", 0) == null && methodQuiet(CAMERA, "xRot", 0) == null) missing.add(CAMERA + ".getXRot");
         // необязательные — разные версии игры, пропускаем в отчёте
         Set<String> optional = new HashSet<>();
         for (String s : missing) optional.add(s);
@@ -318,9 +371,10 @@ public final class Agent {
                     .append(fmt(num(call(window, WINDOW, "getScreenHeight")))).append(',')
                     .append(fmt(num(call(window, WINDOW, "getGuiScale")))).append(']');
         }
+        if (Fullscreen.status != null) sb.append(",\"bl\":").append(str(Fullscreen.status));
         Object active = call(mc, MC, "isWindowActive");
         sb.append(",\"active\":").append(!Boolean.FALSE.equals(active));
-        sb.append(",\"screen\":").append(get(mc, MC, "screen") != null);
+        sb.append(",\"screen\":").append(screenOf(mc) != null);
         Object fps = call(mc, MC, "getFps");
         if (fps == null) fps = get(null, MC, "fps");
         if (fps != null) sb.append(",\"fps\":").append(fmt(num(fps)));
@@ -340,15 +394,13 @@ public final class Agent {
         if (time != null) sb.append(",\"time\":").append(fmt(num(time)));
 
         // камера (интерполированная — та же, что видит игрок)
-        Object gr = get(mc, MC, "gameRenderer");
-        Object cam = gr == null ? null : call(gr, GAME_RENDERER, "getMainCamera");
+        Object cam = cameraOf(mc);
         if (cam != null) {
-            Object pos = call(cam, CAMERA, "getPosition");
-            if (pos == null) pos = call(cam, CAMERA, "position");
+            Object pos = callAny(cam, CAMERA, new String[]{"getPosition", "position"});
             if (pos != null) {
                 sb.append(",\"cam\":[").append(fmt(num(get(pos, VEC3, "x")))).append(',').append(fmt(num(get(pos, VEC3, "y")))).append(',')
-                        .append(fmt(num(get(pos, VEC3, "z")))).append(',').append(fmt(num(call(cam, CAMERA, "getYRot")))).append(',')
-                        .append(fmt(num(call(cam, CAMERA, "getXRot")))).append(']');
+                        .append(fmt(num(get(pos, VEC3, "z")))).append(',').append(fmt(num(callAny(cam, CAMERA, new String[]{"getYRot", "yRot"})))).append(',')
+                        .append(fmt(num(callAny(cam, CAMERA, new String[]{"getXRot", "xRot"})))).append(']');
             }
         }
         Object options = get(mc, MC, "options");
@@ -414,11 +466,12 @@ public final class Agent {
         Object name = call(st, STACK, "getHoverName");
         Object text = name == null ? null : call(name, TEXT, "getString");
         if (text == null && name != null) text = call(name, COMPONENT, "getString");
-        Object id = call(st, STACK, "getDescriptionId");
+        Object id = methodQuiet(STACK, "getDescriptionId", 0) != null ? call(st, STACK, "getDescriptionId") : null;
         if (id == null) {
-            // в новых версиях id берём у самого предмета: "minecraft:diamond"
+            // в новых версиях id есть только у самого предмета: "item.minecraft.diamond"
             Object item = call(st, STACK, "getItem");
-            if (item != null) id = String.valueOf(item);
+            if (item != null) id = methodQuiet(ITEM, "getDescriptionId", 0) != null ? call(item, ITEM, "getDescriptionId") : null;
+            if (id == null && item != null) id = String.valueOf(item);
         }
         sb.append("{\"id\":").append(str(String.valueOf(id)))
                 .append(",\"n\":").append(str(text == null ? "?" : String.valueOf(text)))
@@ -447,15 +500,20 @@ public final class Agent {
 
         private static Method gl(String name, Class<?>... types) throws Exception {
             if (glfw == null) {
-                glfw = cls("org.lwjgl.glfw.GLFW");
+                // тот же GLFW, что использует игра: в NeoForge/Forge в classpath есть вторая, неинициализированная копия
+                Class<?> w = cls(WINDOW);
+                try {
+                    if (w != null && w.getClassLoader() != null) glfw = Class.forName("org.lwjgl.glfw.GLFW", true, w.getClassLoader());
+                } catch (Throwable ignored) {
+                }
+                if (glfw == null) glfw = cls("org.lwjgl.glfw.GLFW");
                 if (glfw == null) throw new IllegalStateException("нет GLFW");
             }
             return glfw.getMethod(name, types);
         }
 
         private static long handle(Object window) {
-            Object h = call(window, WINDOW, "getWindow");
-            if (!(h instanceof Long)) h = call(window, WINDOW, "handle");
+            Object h = callAny(window, WINDOW, new String[]{"getWindow", "handle"});
             return h instanceof Long ? (Long) h : 0;
         }
 
@@ -480,15 +538,53 @@ public final class Agent {
             }
         }
 
+        private static boolean disabled;
+        /** состояние для лаунчера (видно в диагностике) */
+        static volatile String status;
+
+
         static void check(Object mc) throws Exception {
+            if (disabled) return;
             Object window = call(mc, MC, "getWindow");
             if (window == null) return;
+            // 26.x (окно на SDL): у игры есть свой полный экран без рамки — просто выключаем эксклюзивный
+            if (methodQuiet(WINDOW, "isExclusiveFullscreen", 0) != null) {
+                Object options = get(mc, MC, "options");
+                Object opt = options == null || fieldQuiet(OPTIONS, "exclusiveFullscreen") == null ? null : get(options, OPTIONS, "exclusiveFullscreen");
+                if (opt != null && Boolean.TRUE.equals(call(opt, OPTION_INSTANCE, "get"))) {
+                    // настройка «Эксклюзивный полный экран: выкл» — игра сама переключится и сохранит её
+                    call(opt, OPTION_INSTANCE, "set", false);
+                    call(options, OPTIONS, "save");
+                    status = "без рамки (настройка игры)";
+                    System.out.println("[AuroraOverlay] полный экран без рамки (настройка игры)");
+                } else if (status == null) {
+                    status = "SDL, эксклюзивный=" + call(window, WINDOW, "isExclusiveFullscreen");
+                }
+                if (opt == null && Boolean.TRUE.equals(call(window, WINDOW, "isExclusiveFullscreen"))) {
+                    call(window, WINDOW, "setExclusiveFullscreen", false);
+                    System.out.println("[AuroraOverlay] полный экран без рамки (SDL)");
+                }
+                return;
+            }
+            if (methodQuiet(WINDOW, "isFullscreen", 0) == null || cls("org.lwjgl.glfw.GLFW") == null) {
+                disabled = true;
+                status = "недоступен: isFullscreen=" + (methodQuiet(WINDOW, "isFullscreen", 0) != null) + " GLFW=" + (cls("org.lwjgl.glfw.GLFW") != null);
+                System.err.println("[AuroraOverlay] полный экран без рамки недоступен: isFullscreen=" + (methodQuiet(WINDOW, "isFullscreen", 0) != null)
+                        + " GLFW=" + (cls("org.lwjgl.glfw.GLFW") != null));
+                return;
+            }
             long h = handle(window);
-            if (h == 0) return;
+            if (h == 0) {
+                status = "нет дескриптора окна";
+                return;
+            }
             boolean fs = Boolean.TRUE.equals(call(window, WINDOW, "isFullscreen"));
 
             if (pending != null) {
-                if (fs) return;
+                if (fs) {
+                    status = "ждём выхода из полного экрана";
+                    return;
+                }
                 long monitor = pending[0];
                 pending = null;
                 Object mode = gl("glfwGetVideoMode", long.class).invoke(null, monitor);
@@ -502,6 +598,7 @@ public final class Agent {
                 gl("glfwSetWindowMonitor", long.class, long.class, int.class, int.class, int.class, int.class, int.class)
                         .invoke(null, h, 0L, mx[0], my[0], w, hh + 1, -1);
                 borderless = true;
+                status = "без рамки " + w + "x" + hh;
                 System.out.println("[AuroraOverlay] полный экран без рамки " + w + "x" + hh);
                 return;
             }
@@ -510,9 +607,13 @@ public final class Agent {
                 // игра в эксклюзивном полноэкранном режиме — запоминаем монитор и выходим из него
                 long monitor = (Long) gl("glfwGetWindowMonitor", long.class).invoke(null, h);
                 if (monitor == 0) monitor = (Long) gl("glfwGetPrimaryMonitor").invoke(null);
-                if (monitor == 0) return;
+                if (monitor == 0) {
+                    status = "нет монитора";
+                    return;
+                }
                 call(window, WINDOW, "toggleFullScreen");
                 pending = new long[]{monitor};
+                status = "выход из эксклюзивного, fs=" + call(window, WINDOW, "isFullscreen");
                 return;
             }
 
