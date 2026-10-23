@@ -18,16 +18,17 @@ const OVERLAY_TOGGLES: [keyof OverlayConfig, string][] = [
   ['loot', 'Лут списком'],
   ['worldIcons', 'Иконки над лутом'],
   ['armor', 'HUD брони'],
-  ['offhand', 'HUD щита / левой руки'],
+  ['offhand', 'Предметы в руках и прочность'],
   ['arrows', 'Стрелки к луту'],
   ['coords', 'Координаты'],
   ['fps', 'FPS'],
   ['clock', 'Часы'],
   ['rightSide', 'Панель справа'],
-  ['borderless', 'Полный экран без рамки']
+  ['borderless', 'Полный экран без рамки'],
+  ['autoRefill', 'Автоподмена предметов']
 ]
 
-const DEFAULT_OVERLAY: OverlayConfig = { loot: true, worldIcons: true, radius: 24, arrows: true, coords: false, fps: false, clock: false, armor: true, offhand: true, rightSide: false, maxLines: 8, borderless: true }
+const DEFAULT_OVERLAY: OverlayConfig = { loot: true, worldIcons: true, radius: 24, arrows: true, coords: false, fps: false, clock: false, armor: true, offhand: true, rightSide: false, maxLines: 8, borderless: true, autoRefill: false }
 
 export default function SettingsPage() {
   const { settings, setSettings, toast, update } = useStore()
@@ -75,7 +76,7 @@ export default function SettingsPage() {
             <div className="text">
               <b>Aurora Helper — оверлей по F6</b>
               <span>
-                Не мод: работает на ванилле и любом загрузчике (Minecraft 1.14.4+, Forge 1.17+). В игре нажмите <span className="kbd">F6</span> — меню, ↑↓ выбор, ←→ изменить. Игру лучше запускать в оконном режиме или «без рамки».
+                Не мод: работает на ванилле и любом загрузчике (Minecraft 1.14.4+, Forge 1.17+). В игре нажмите <span className="kbd">F6</span> — меню, ↑↓ выбор, ←→ изменить. Полный экран помощник сам делает «без рамки», чтобы оверлей был виден. Автоподмена: когда в руке кончился стак, сломался инструмент или броня либо сработал тотем, такая же вещь берётся из инвентаря (на некоторых серверах такое запрещено).
               </span>
             </div>
             <Switch on={settings.helperEnabled} onChange={(v) => patch({ helperEnabled: v })} />

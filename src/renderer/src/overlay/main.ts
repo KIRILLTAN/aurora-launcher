@@ -22,12 +22,22 @@ interface Snap {
   fov?: number
   time?: number
   armor?: (Stack | null)[]
+  main?: Stack | null
   off?: Stack | null
   loot?: { p: number[]; i: Stack | null }[]
 }
 interface MenuState {
   index: number
-  items: { key: keyof OverlayConfig; label: string }[]
+  items: { key: keyof OverlayConfig | 'close'; label: string }[]
+}
+interface IconDef {
+  flat?: string
+  top?: string
+  side?: string
+  front?: string
+  tint?: string
+  tintTop?: string
+  tintSide?: string
 }
 
 const world = document.getElementById('world')!
@@ -76,13 +86,78 @@ function icon(id: string): string {
   if (c !== undefined) return c
   if (!pending.has(id)) {
     pending.add(id)
-    window.aurora.invoke('overlay:icon', id).then((url) => {
-      icons.set(id, (url as string) || '')
-      lastHud = ''
-      schedule()
-    }).catch(() => icons.set(id, ''))
+    window.aurora
+      .invoke('overlay:icon', id)
+      .then((def) => renderIcon(def as IconDef | null))
+      .then((url) => {
+        icons.set(id, url)
+        lastHud = ''
+        for (const el of pool) el.dataset.k = ''
+        schedule()
+      })
+      .catch(() => icons.set(id, ''))
   }
   return ''
+}
+
+// ---------- Иконки: картинка предмета или кубик блока, как в инвентаре ----------
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = reject
+    img.src = src
+  })
+}
+
+/** Квадрат текстуры (у анимированных — первый кадр), при необходимости подкрашенный. */
+function face(img: HTMLImageElement, tint?: string): HTMLCanvasElement {
+  const t = img.width
+  const c = document.createElement('canvas')
+  c.width = c.height = t
+  const g = c.getContext('2d')!
+  g.imageSmoothingEnabled = false
+  g.drawImage(img, 0, 0, t, t, 0, 0, t, t)
+  if (tint) {
+    g.globalCompositeOperation = 'multiply'
+    g.fillStyle = tint
+    g.fillRect(0, 0, t, t)
+    g.globalCompositeOperation = 'destination-in'
+    g.drawImage(img, 0, 0, t, t, 0, 0, t, t)
+  }
+  return c
+}
+
+async function renderIcon(def: IconDef | null): Promise<string> {
+  if (!def) return ''
+  if (def.flat) {
+    const f = face(await loadImage(def.flat), def.tint)
+    return f.toDataURL()
+  }
+  if (!def.top || !def.side) return ''
+  const [top, side, front] = await Promise.all([loadImage(def.top), loadImage(def.side), loadImage(def.front || def.side)])
+  const S = 64
+  const c = document.createElement('canvas')
+  c.width = c.height = S
+  const g = c.getContext('2d')!
+  g.imageSmoothingEnabled = false
+  // изометрический кубик: верх, левая (лицевая) и правая грани
+  const draw = (src: HTMLCanvasElement, a: number, b: number, cc: number, d: number, e: number, f: number, shade: number): void => {
+    const t = src.width
+    g.setTransform(a / t, b / t, cc / t, d / t, e, f)
+    g.drawImage(src, 0, 0)
+    if (shade > 0) {
+      g.globalCompositeOperation = 'source-atop'
+      g.fillStyle = `rgba(0,0,0,${shade})`
+      g.fillRect(0, 0, t, t)
+      g.globalCompositeOperation = 'source-over'
+    }
+  }
+  draw(face(top, def.tintTop), 28, -14, 28, 14, 4, 18, 0)
+  draw(face(front, def.tintSide), 28, 14, 0, 30, 4, 18, 0.18)
+  draw(face(side, def.tintSide), 28, -14, 0, 30, 32, 32, 0.38)
+  g.setTransform(1, 0, 0, 1, 0, 0)
+  return c.toDataURL()
 }
 
 const esc = (s: string): string => s.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]!)
@@ -162,12 +237,19 @@ function render(): void {
   // --- иконки над лутом
   let used = 0
   if (show && cfg!.worldIcons && !snap.screen && snap.loot) {
+    // одинаковые предметы, лежащие рядом, — одна иконка с общим числом
+    const piles: { p: number[]; i: Stack }[] = []
     for (const l of snap.loot) {
       if (!l.i) continue
       if (snap.pos) {
         const d = Math.hypot(l.p[0] - snap.pos[0], l.p[1] - snap.pos[1], l.p[2] - snap.pos[2])
         if (d > cfg!.radius) continue
       }
+      const near = piles.find((q) => q.i.id === l.i!.id && Math.abs(q.p[0] - l.p[0]) < 1.2 && Math.abs(q.p[1] - l.p[1]) < 1.2 && Math.abs(q.p[2] - l.p[2]) < 1.2)
+      if (near) near.i = { ...near.i, c: near.i.c + l.i.c }
+      else piles.push({ p: l.p, i: l.i })
+    }
+    for (const l of piles) {
       const pr = project(l.p[0], l.p[1] + 0.75, l.p[2])
       if (!pr) continue
       const size = Math.max(14, Math.min(40, 120 / Math.max(1, pr.depth)))
@@ -230,16 +312,23 @@ function render(): void {
         }).join('')}</div>`)
       }
     }
-    if (c.offhand && snap.off) {
-      const o = snap.off
-      const dur = durability(o)
-      const shield = /shield/.test(o.id)
-      parts.push(`<div class="equip off" style="right:calc(50% + ${half + 29 * scale + 8}px)"><div class="row">${iconHtml(o, 24)}<span><span class="${shield ? 'accent' : ''}">${shield ? 'Щит' : esc(o.n)}</span><br><span class="${dur?.cls || 'dim'}">${dur ? dur.text : o.c > 1 ? '×' + o.c : ''}</span></span></div></div>`)
+    // предметы в руках с прочностью — слева от хотбара
+    if (c.offhand && (snap.main || snap.off)) {
+      const row = (st: Stack, hand: string): string => {
+        const dur = durability(st)
+        const shield = /shield/.test(st.id)
+        const name = shield ? 'Щит' : esc(st.n)
+        const bar = dur ? `<span class="bar"><i class="${dur.cls}" style="width:${Math.round(dur.pct * 100)}%"></i></span>` : ''
+        return `<div class="row">${iconHtml(st, 24)}<span><span class="dim small">${hand}</span> <span class="${shield ? 'accent' : st.g ? 'gold' : ''}">${name}</span><br><span class="${dur?.cls || 'dim'}">${dur ? dur.text : st.c > 1 ? '×' + st.c : ''}</span>${bar}</span></div>`
+      }
+      const rows = (snap.main ? [row(snap.main, 'правая')] : []).concat(snap.off ? [row(snap.off, 'левая')] : [])
+      parts.push(`<div class="equip off" style="right:calc(50% + ${half + 29 * scale + 8}px)">${rows.join('')}</div>`)
     }
   }
   if (menu && cfg) {
     const c = cfg
-    parts.push(`<div class="menu"><div class="mtitle">✦ Aurora Helper ✦</div><div class="mhint">F6 — закрыть · ↑↓ выбор · ←→/Enter изменить</div>${menu.items.map((it, i) => {
+    parts.push(`<div class="menu"><div class="mtitle">✦ Aurora Helper ✦</div><div class="mhint">F6 или Esc — закрыть · ↑↓ выбор · ←→/Enter изменить</div>${menu.items.map((it, i) => {
+      if (it.key === 'close') return `<div class="mi close${i === menu!.index ? ' sel' : ''}"><span>${it.label}</span><span class="dim">Enter</span></div>`
       const v = c[it.key]
       const val = typeof v === 'boolean' ? (v ? '<span class="ok">ВКЛ</span>' : '<span class="dim">выкл</span>') : `<span class="accent">${v}</span>`
       return `<div class="mi${i === menu!.index ? ' sel' : ''}"><span>${it.label}</span>${val}</div>`

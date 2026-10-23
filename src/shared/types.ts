@@ -310,6 +310,8 @@ export interface OverlayConfig {
   maxLines: number
   /** полноэкранный режим игры заменяется на окно без рамки, чтобы оверлей был виден */
   borderless: boolean
+  /** автоподмена: новый стак в руку, тотем в левую руку, запасная броня */
+  autoRefill: boolean
 }
 
 export interface ProxyConfig {

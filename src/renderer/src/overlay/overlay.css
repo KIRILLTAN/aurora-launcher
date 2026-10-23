@@ -52,3 +52,10 @@ html, body {
 .mi { display: flex; justify-content: space-between; padding: 6px 10px; border-radius: 8px; transition: background 0.15s; }
 .mi.sel { background: linear-gradient(90deg, rgba(61, 255, 176, 0.22), rgba(164, 119, 255, 0.22)); }
 @keyframes pop { from { opacity: 0; transform: translate(-50%, -46%) scale(0.95); } }
+.equip.off .row + .row { margin-top: 6px; }
+.equip .small { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+.bar { display: block; width: 64px; height: 3px; margin-top: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.15); overflow: hidden; }
+.bar i { display: block; height: 100%; border-radius: 2px; background: #3dffb0; }
+.bar i.warn { background: #ffd166; }
+.bar i.bad { background: #ff5c7a; }
+.mi.close { margin-top: 6px; border-top: 1px solid rgba(255, 255, 255, 0.12); color: #ffb4c2; }

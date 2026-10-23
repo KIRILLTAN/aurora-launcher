@@ -35,7 +35,13 @@ const C = {
   OPTIONS: 'net.minecraft.client.Options',
   OPTION_INSTANCE: 'net.minecraft.client.OptionInstance',
   WINDOW: 'com.mojang.blaze3d.platform.Window',
-  SLOT: 'net.minecraft.world.entity.EquipmentSlot'
+  SLOT: 'net.minecraft.world.entity.EquipmentSlot',
+  PLAYER: 'net.minecraft.world.entity.player.Player',
+  INVENTORY: 'net.minecraft.world.entity.player.Inventory',
+  MENU: 'net.minecraft.world.inventory.AbstractContainerMenu',
+  CLICK_TYPE: 'net.minecraft.world.inventory.ClickType',
+  GAME_MODE: 'net.minecraft.client.multiplayer.MultiPlayerGameMode',
+  ITEM: 'net.minecraft.world.item.Item'
 }
 
 const NEEDS: Need[] = [
@@ -93,7 +99,21 @@ const NEEDS: Need[] = [
   { cls: C.WINDOW, name: 'getScreenWidth', argc: 0 },
   { cls: C.WINDOW, name: 'getScreenHeight', argc: 0 },
   { cls: C.WINDOW, name: 'getGuiScale', argc: 0 },
-  ...['HEAD', 'CHEST', 'LEGS', 'FEET'].map((n) => ({ cls: C.SLOT, name: n, field: true }))
+  ...['HEAD', 'CHEST', 'LEGS', 'FEET'].map((n) => ({ cls: C.SLOT, name: n, field: true })),
+  // предмет в правой руке и автоподмена
+  { cls: C.LIVING, name: 'getMainHandItem', argc: 0 },
+  { cls: C.ITEM, name: 'getDescriptionId', argc: 0 },
+  { cls: C.PLAYER, name: 'getInventory', argc: 0 },
+  { cls: C.PLAYER, name: 'inventory', field: true },
+  { cls: C.PLAYER, name: 'inventoryMenu', field: true },
+  { cls: C.INVENTORY, name: 'selected', field: true },
+  { cls: C.INVENTORY, name: 'getSelectedSlot', argc: 0 },
+  { cls: C.INVENTORY, name: 'getItem', argc: 1 },
+  { cls: C.MENU, name: 'containerId', field: true },
+  { cls: C.MC, name: 'gameMode', field: true },
+  { cls: C.GAME_MODE, name: 'handleInventoryMouseClick', argc: 5 },
+  { cls: C.CLICK_TYPE, name: 'SWAP', field: true },
+  { cls: C.CLICK_TYPE, name: 'QUICK_MOVE', field: true }
 ]
 
 // ---------------- ProGuard-маппинги Mojang ----------------
@@ -232,7 +252,7 @@ function findLibrary(prefix: string[], fileRe: RegExp): string | null {
 export async function buildOverlayMappings(inst: Instance, v: ResolvedVersion): Promise<{ file: string; ns: Namespace } | null> {
   const ns = overlayNamespace(inst, v)
   if (!ns) return null
-  const out = path.join(ensureDir(path.join(dirs.cache(), 'overlay')), `${v.id}-${ns}-v3.tsv`)
+  const out = path.join(ensureDir(path.join(dirs.cache(), 'overlay')), `${v.id}-${ns}-v4.tsv`)
   if (exists(out)) return { file: out, ns }
 
   const lines: string[] = []

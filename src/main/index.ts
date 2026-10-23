@@ -18,7 +18,7 @@ import { launchInstance, stopInstance, runningIds, getLog, reinstallInstance } f
 import { askAi } from './crash/ai'
 import { getRemoteInfo, initUpdater, checkForUpdates, installUpdate, getUpdateStatus } from './remote'
 import { withTask, withCancellableTask, emit, cancelTask, setMainWindow } from './events'
-import { overlayIcon, shutdownOverlay } from './overlay'
+import { applyOverlayConfig, overlayIcon, shutdownOverlay } from './overlay'
 import { applyProxy, testConnection } from './util/net'
 import { runSelfTest, runAutoTest } from './selftest'
 import * as sync from './sync'
@@ -96,6 +96,7 @@ const handlers: Record<string, Handler> = {
     delete p.githubRepo
     updateSettings(p)
     if (p.proxy) void applyProxy()
+    if (p.overlay) applyOverlayConfig()
     return publicSettings()
   },
 

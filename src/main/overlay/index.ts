@@ -2,7 +2,7 @@ import fs from 'fs'
 import net from 'net'
 import path from 'path'
 import crypto from 'crypto'
-import { readZipFiles, walkZip } from '../util/zip'
+import { AssetIndex, type IconDef } from './icons'
 import { app, BrowserWindow, globalShortcut, ipcMain, screen } from 'electron'
 import type { Instance, OverlayConfig } from '@shared/types'
 import { dirs, getSettings, updateSettings } from '../settings'
@@ -32,7 +32,8 @@ export const DEFAULT_OVERLAY: OverlayConfig = {
   offhand: true,
   rightSide: false,
   maxLines: 8,
-  borderless: true
+  borderless: true,
+  autoRefill: false
 }
 
 interface Session {
@@ -130,7 +131,8 @@ export async function prepareOverlay(inst: Instance, v: ResolvedVersion): Promis
   await ensureServer()
   const token = crypto.randomBytes(12).toString('hex')
   sessions.set(token, { token, instance: inst, rootId: v.rootId })
-  const flags = overlayConfig().borderless ? 'b' : ''
+  const cfg = overlayConfig()
+  const flags = (cfg.borderless ? 'b' : '') + (cfg.autoRefill ? 'r' : '')
   // Java на Windows портит не-ASCII символы в аргументах агента («D:\Новая папка» → «D:\????? ?????»),
   // поэтому путь к маппингам передаём в base64, а сам jar — только по ASCII-пути
   const mapArg = 'b64:' + Buffer.from(map.file, 'utf8').toString('base64url')
@@ -156,7 +158,7 @@ function onConnection(socket: net.Socket): void {
       }
       if (!session) {
         try {
-          const hello = JSON.parse(line) as { t: string; token: string; missing: string[]; error?: string }
+          const hello = JSON.parse(line) as { t: string; token: string; missing: string[]; error?: string; refill?: boolean }
           session = sessions.get(hello.token) || null
           if (!session) return socket.destroy()
           session.socket = socket
@@ -171,9 +173,13 @@ function onConnection(socket: net.Socket): void {
                 : '[Aurora] Помощник F6 подключён — нажмите F6 в игре',
               level: hello.missing.length ? 'warn' : 'info'
             },
-            ...(hello.error ? [{ instanceId: session.instance.id, line: `[Aurora] Помощник: ${hello.error}`, level: 'warn' as const }] : [])
+            ...(hello.error ? [{ instanceId: session.instance.id, line: `[Aurora] Помощник: ${hello.error}`, level: 'warn' as const }] : []),
+            ...(overlayConfig().autoRefill && hello.refill === false
+              ? [{ instanceId: session.instance.id, line: '[Aurora] Автоподмена предметов недоступна в этой версии игры', level: 'warn' as const }]
+              : [])
           ])
           openWindow(session)
+          sendAgentConfig(session)
           registerKeys()
         } catch {
           socket.destroy()
@@ -286,19 +292,37 @@ ipcMain.on('overlay:ack', (e) => {
 
 // ---------------- Меню и клавиши ----------------
 
-const MENU: { key: keyof OverlayConfig; label: string; values?: number[] }[] = [
+type MenuKey = keyof OverlayConfig | 'close'
+
+const MENU: { key: MenuKey; label: string; values?: number[] }[] = [
   { key: 'loot', label: 'Лут списком' },
   { key: 'worldIcons', label: 'Иконки над лутом (сквозь блоки)' },
   { key: 'radius', label: 'Радиус поиска', values: [8, 16, 24, 32, 48, 64] },
   { key: 'arrows', label: 'Стрелки-направления' },
   { key: 'maxLines', label: 'Строк в списке', values: [4, 6, 8, 12, 16] },
   { key: 'armor', label: 'HUD брони (справа)' },
-  { key: 'offhand', label: 'HUD щита / левой руки' },
+  { key: 'offhand', label: 'Предметы в руках и прочность (слева)' },
+  { key: 'autoRefill', label: 'Автоподмена предметов' },
   { key: 'coords', label: 'Координаты' },
   { key: 'fps', label: 'FPS' },
   { key: 'clock', label: 'Часы' },
-  { key: 'rightSide', label: 'Панель справа' }
+  { key: 'rightSide', label: 'Панель справа' },
+  { key: 'borderless', label: 'Полный экран без рамки' },
+  { key: 'close', label: '✕ Закрыть меню' }
 ]
+
+/** Настройки, которые нужны самому агенту в игре (полный экран, автоподмена) — меняются на лету. */
+function sendAgentConfig(s: Session): void {
+  const cfg = overlayConfig()
+  if (s.socket && !s.socket.destroyed) s.socket.write(JSON.stringify({ borderless: cfg.borderless, refill: cfg.autoRefill }) + '
+')
+}
+
+/** Настройки помощника изменились в лаунчере — обновляем оверлей и агента. */
+export function applyOverlayConfig(): void {
+  pushConfig()
+  for (const s of sessions.values()) sendAgentConfig(s)
+}
 
 function pushConfig(): void {
   const payload = { config: overlayConfig(), menu: menuOpen ? { index: menuIndex, items: MENU.map((m) => ({ key: m.key, label: m.label })) } : null }
@@ -307,6 +331,8 @@ function pushConfig(): void {
 
 function change(dir: number): void {
   const item = MENU[menuIndex]
+  touchMenu()
+  if (item.key === 'close') return setMenu(false)
   const cfg = overlayConfig()
   const cur = cfg[item.key]
   let next: number | boolean
@@ -315,21 +341,28 @@ function change(dir: number): void {
     next = item.values[(i + dir + item.values.length) % item.values.length]
   } else next = !cur
   updateSettings({ overlay: { ...cfg, [item.key]: next } })
-  pushConfig()
+  applyOverlayConfig()
+}
+
+// меню само закрывается через 30 с без нажатий: стрелки и Enter не должны навсегда «застрять» за меню
+let menuTimer: NodeJS.Timeout | null = null
+function touchMenu(): void {
+  if (menuTimer) clearTimeout(menuTimer)
+  menuTimer = menuOpen ? setTimeout(() => setMenu(false), 30000) : null
 }
 
 function setMenu(open: boolean): void {
   menuOpen = open
+  touchMenu()
   const keys = ['Up', 'Down', 'Left', 'Right', 'Enter', 'Escape']
+  for (const k of keys) if (globalShortcut.isRegistered(k)) globalShortcut.unregister(k)
   if (open) {
-    globalShortcut.register('Up', () => ((menuIndex = (menuIndex + MENU.length - 1) % MENU.length), pushConfig()))
-    globalShortcut.register('Down', () => ((menuIndex = (menuIndex + 1) % MENU.length), pushConfig()))
+    globalShortcut.register('Up', () => ((menuIndex = (menuIndex + MENU.length - 1) % MENU.length), touchMenu(), pushConfig()))
+    globalShortcut.register('Down', () => ((menuIndex = (menuIndex + 1) % MENU.length), touchMenu(), pushConfig()))
     globalShortcut.register('Left', () => change(-1))
     globalShortcut.register('Right', () => change(1))
     globalShortcut.register('Enter', () => change(1))
     globalShortcut.register('Escape', () => setMenu(false))
-  } else {
-    for (const k of keys) if (globalShortcut.isRegistered(k)) globalShortcut.unregister(k)
   }
   for (const s of sessions.values()) {
     if (!s.win || s.win.isDestroyed()) continue
@@ -344,7 +377,7 @@ function registerKeys(): void {
 }
 
 /** Переключение пункта меню кликом мыши (когда курсор игры свободен). */
-export function overlayToggle(key: keyof OverlayConfig): void {
+export function overlayToggle(key: MenuKey): void {
   const i = MENU.findIndex((m) => m.key === key)
   if (i >= 0) {
     menuIndex = i
@@ -354,64 +387,19 @@ export function overlayToggle(key: keyof OverlayConfig): void {
 
 // ---------------- Иконки предметов ----------------
 
-const iconCache = new Map<string, Promise<string>>()
-/** Индекс текстур: путь внутри jar → jar. Строится один раз за сессию только по оглавлениям. */
-const textureIndex = new WeakMap<Session, Promise<Map<string, string>>>()
+/** Ресурсы игры и модов для иконок — один индекс на запуск сборки. */
+const assetIndexes = new WeakMap<Session, AssetIndex>()
 
-function texturesOf(session: Session): Promise<Map<string, string>> {
-  let idx = textureIndex.get(session)
-  if (!idx) {
-    idx = (async () => {
-      const map = new Map<string, string>()
-      const jars = [clientJarPath(session.instance.versionId || session.rootId), clientJarPath(session.rootId)]
-      const mods = path.join(gameDir(session.instance.id), 'mods')
-      if (exists(mods)) for (const f of await fs.promises.readdir(mods)) if (f.endsWith('.jar')) jars.push(path.join(mods, f))
-      for (const jar of jars) {
-        if (!exists(jar)) continue
-        await walkZip(jar, (e) => {
-          const n = e.fileName
-          if (n.startsWith('assets/') && n.endsWith('.png') && n.includes('/textures/') && !map.has(n)) map.set(n, jar)
-        }).catch(() => undefined)
-      }
-      return map
-    })()
-    textureIndex.set(session, idx)
-  }
-  return idx
-}
-
-/** Текстура предмета по его descriptionId: из jar игры или модов сборки. */
-export function overlayIcon(descriptionId: string): Promise<string> {
+/** Иконка предмета по его descriptionId — из модели предмета, как в самой игре. */
+export function overlayIcon(descriptionId: string): Promise<IconDef | null> {
   const session = [...sessions.values()].find((s) => s.socket)
-  if (!session) return Promise.resolve('')
-  const key = session.instance.id + '|' + descriptionId
-  let p = iconCache.get(key)
-  if (!p) {
-    p = findIcon(session, descriptionId).catch(() => '')
-    iconCache.set(key, p)
+  if (!session) return Promise.resolve(null)
+  let idx = assetIndexes.get(session)
+  if (!idx) {
+    idx = new AssetIndex([clientJarPath(session.instance.versionId || session.rootId), clientJarPath(session.rootId)], path.join(gameDir(session.instance.id), 'mods'))
+    assetIndexes.set(session, idx)
   }
-  return p
-}
-
-async function findIcon(session: Session, descriptionId: string): Promise<string> {
-  // форматы: "item.minecraft.diamond", "block.minecraft.stone" или "minecraft:diamond"
-  const colon = /^([a-z0-9_.-]+):([a-z0-9_/.-]+)$/.exec(descriptionId)
-  const m = colon ? ['', 'item', colon[1], colon[2]] : /^(item|block)\.([^.]+)\.(.+)$/.exec(descriptionId)
-  if (!m) return ''
-  const [, kind, ns, rawPath] = m
-  const p = rawPath.replace(/\./g, '/')
-  const names = kind === 'item'
-    ? [`item/${p}`, `block/${p}`, `items/${p}`]
-    : [`block/${p}`, `item/${p}`, `block/${p}_top`, `block/${p}_side`, `block/${p}_front`, `blocks/${p}`, `block/${p.replace(/_(slab|stairs|wall|fence|fence_gate|button|pressure_plate)$/, '')}`, `block/${p.replace(/_(slab|stairs|wall)$/, 's')}`]
-  const index = await texturesOf(session)
-  for (const n of names) {
-    const entry = `assets/${ns}/textures/${n}.png`
-    const jar = index.get(entry)
-    if (!jar) continue
-    const buf = (await readZipFiles(jar, [entry])).get(entry)
-    if (buf) return 'data:image/png;base64,' + buf.toString('base64')
-  }
-  return ''
+  return idx.icon(descriptionId)
 }
 
 /** Диагностика для самопроверки. */
