@@ -55,13 +55,20 @@ window.aurora.on('overlay:config', (p) => {
   schedule()
 })
 
+function frame(): void {
+  if (!scheduled) return
+  scheduled = false
+  render()
+  // кадр готов — лаунчер пришлёт следующий снимок (без очереди и отставания)
+  window.aurora.overlayAck()
+}
+
 function schedule(): void {
   if (scheduled) return
   scheduled = true
-  requestAnimationFrame(() => {
-    scheduled = false
-    render()
-  })
+  requestAnimationFrame(frame)
+  // Windows может притормаживать requestAnimationFrame у окна поверх игры — не ждём его дольше кадра
+  setTimeout(frame, 20)
 }
 
 function icon(id: string): string {

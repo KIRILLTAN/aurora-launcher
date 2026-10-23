@@ -15,7 +15,9 @@ const api = {
     return () => ipcRenderer.removeListener(channel, listener)
   },
   pathForFile: (file: File): string => webUtils.getPathForFile(file),
-  showWindow: (): void => ipcRenderer.send('win:show')
+  showWindow: (): void => ipcRenderer.send('win:show'),
+  /** оверлей отрисовал кадр — можно присылать следующий снимок */
+  overlayAck: (): void => ipcRenderer.send('overlay:ack')
 }
 
 contextBridge.exposeInMainWorld('aurora', api)

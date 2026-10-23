@@ -3,6 +3,7 @@ export interface AuroraBridge {
   on: (channel: string, cb: (payload: unknown) => void) => () => void
   pathForFile: (file: File) => string
   showWindow: () => void
+  overlayAck: () => void
 }
 
 declare global {

@@ -3,7 +3,7 @@ import net from 'net'
 import path from 'path'
 import crypto from 'crypto'
 import { readZipFiles, walkZip } from '../util/zip'
-import { app, BrowserWindow, globalShortcut, screen } from 'electron'
+import { app, BrowserWindow, globalShortcut, ipcMain, screen } from 'electron'
 import type { Instance, OverlayConfig } from '@shared/types'
 import { dirs, getSettings, updateSettings } from '../settings'
 import { gameDir } from '../instances'
@@ -46,6 +46,10 @@ interface Session {
   last?: Snapshot
   bounds?: string
   borderless?: string
+  /** время отправки снимка, который оверлей ещё не отрисовал */
+  inFlight?: number
+  /** свежий снимок, ждущий отправки */
+  queued?: string
 }
 
 interface Snapshot {
@@ -140,10 +144,16 @@ function onConnection(socket: net.Socket): void {
   socket.setEncoding('utf8')
   socket.on('data', (chunk: string) => {
     buf += chunk
-    let nl: number
-    while ((nl = buf.indexOf('\n')) >= 0) {
-      const line = buf.slice(0, nl)
-      buf = buf.slice(nl + 1)
+    const lines = buf.split('\n')
+    buf = lines.pop() || ''
+    // если снимки накопились, старые не нужны: берём только самый свежий, иначе оверлей отстаёт на секунды
+    let latest: string | null = null
+    for (const line of lines) {
+      if (!line) continue
+      if (session) {
+        latest = line
+        continue
+      }
       if (!session) {
         try {
           const hello = JSON.parse(line) as { t: string; token: string; missing: string[]; error?: string }
@@ -170,8 +180,8 @@ function onConnection(socket: net.Socket): void {
         }
         continue
       }
-      onSnapshot(session, line)
     }
+    if (session && latest) onSnapshot(session, latest)
   })
   const close = (): void => {
     if (!session) return
@@ -247,8 +257,32 @@ function onSnapshot(s: Session, line: string): void {
   const visible = menuOpen || (snap.active !== false && snap.inGame === true)
   if (visible && !win.isVisible()) win.showInactive()
   else if (!visible && win.isVisible()) win.hide()
-  if (visible) win.webContents.send('overlay:data', line)
+  if (visible) deliver(s, line)
 }
+
+/**
+ * В окно оверлея — только свежий снимок и не больше одного «в пути»: следующий уходит,
+ * когда оверлей отрисовал предыдущий. Так не копится очередь и картинка не отстаёт от игры.
+ */
+function deliver(s: Session, line: string): void {
+  const win = s.win
+  if (!win || win.isDestroyed()) return
+  if (s.inFlight && Date.now() - s.inFlight < 250) {
+    s.queued = line
+    return
+  }
+  s.queued = undefined
+  s.inFlight = Date.now()
+  win.webContents.send('overlay:data', line)
+}
+
+ipcMain.on('overlay:ack', (e) => {
+  for (const s of sessions.values()) {
+    if (!s.win || s.win.isDestroyed() || s.win.webContents !== e.sender) continue
+    s.inFlight = 0
+    if (s.queued) deliver(s, s.queued)
+  }
+})
 
 // ---------------- Меню и клавиши ----------------
 

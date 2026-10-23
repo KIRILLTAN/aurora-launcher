@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { addOffline } from './auth/accounts'
+import { copyDir } from './util/store'
 import AdmZip from 'adm-zip'
 import type { Task } from '@shared/types'
 import { createInstance, getInstance, gameDir, deleteInstance, listInstances } from './instances'
@@ -228,9 +229,9 @@ export async function runAutoTest(spec: string, outFile: string): Promise<void> 
     const sg = gameDir(id)
     const dg = gameDir(copy.id)
     for (const d of ['mods', 'config', 'resourcepacks', 'shaderpacks', 'defaultconfigs', 'kubejs']) {
-      if (fs.existsSync(path.join(sg, d))) fs.cpSync(path.join(sg, d), path.join(dg, d), { recursive: true })
+      if (fs.existsSync(path.join(sg, d))) await copyDir(path.join(sg, d), path.join(dg, d))
     }
-    if (world) fs.cpSync(path.join(sg, 'saves', world), path.join(dg, 'saves', world), { recursive: true })
+    if (world) await copyDir(path.join(sg, 'saves', world), path.join(dg, 'saves', world))
     const opts = fs.existsSync(path.join(sg, 'options.txt')) ? fs.readFileSync(path.join(sg, 'options.txt'), 'utf8') : ''
     fs.writeFileSync(path.join(dg, 'options.txt'), opts.split(/\r?\n/).filter((l) => !/^fullscreen:/.test(l)).concat('fullscreen:true').join('\n'))
     const acc = getSettings().selectedAccount

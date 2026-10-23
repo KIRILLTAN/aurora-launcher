@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { Instance } from '@shared/types'
 import { dirs } from './settings'
-import { readJson, writeJson, exists, ensureDir, uid } from './util/store'
+import { readJson, writeJson, exists, ensureDir, uid, copyDir } from './util/store'
 import { emit } from './events'
 
 const META = 'aurora-instance.json'
@@ -75,9 +75,9 @@ export function deleteInstance(id: string): void {
   emit('instances:changed')
 }
 
-export function duplicateInstance(id: string): Instance {
+export async function duplicateInstance(id: string): Promise<Instance> {
   const src = getInstance(id)
   const copy = createInstance({ ...src, name: src.name + ' (копия)', lastPlayed: undefined, playTime: 0 })
-  fs.cpSync(gameDir(id), gameDir(copy.id), { recursive: true })
+  await copyDir(gameDir(id), gameDir(copy.id))
   return copy
 }

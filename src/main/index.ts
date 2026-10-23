@@ -249,6 +249,11 @@ ipcMain.on('win:show', () => {
   win?.focus()
 })
 
+// окно оверлея лежит поверх игры: Chromium на Windows считает его «перекрытым» и замедляет отрисовку
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion')
+app.commandLine.appendSwitch('disable-renderer-backgrounding')
+app.commandLine.appendSwitch('disable-background-timer-throttling')
+
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {

@@ -43,3 +43,17 @@ export function safeJoin(root: string, rel: string): string {
 export function uid(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
 }
+
+/**
+ * Рекурсивное копирование папки. fs.cpSync на Windows падает с «EPERM, Неверная функция»
+ * на путях с русскими буквами, поэтому копируем сами.
+ */
+export async function copyDir(src: string, dst: string): Promise<void> {
+  await fs.promises.mkdir(dst, { recursive: true })
+  for (const e of await fs.promises.readdir(src, { withFileTypes: true })) {
+    const s = path.join(src, e.name)
+    const d = path.join(dst, e.name)
+    if (e.isDirectory()) await copyDir(s, d)
+    else if (e.isFile()) await fs.promises.copyFile(s, d)
+  }
+}
