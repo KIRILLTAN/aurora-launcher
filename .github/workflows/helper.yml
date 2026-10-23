@@ -1,18 +1,14 @@
-name: Мод Aurora Helper
+name: Оверлей-помощник (Java-агент)
 
 on:
   workflow_call:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['helper-mod/**']
+    paths: ['overlay-agent/**']
 
 jobs:
   build:
-    strategy:
-      fail-fast: false
-      matrix:
-        mc: ['1.20.1', '1.21.1']
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,17 +16,13 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.10.2'
-      - name: Сборка мода для ${{ matrix.mc }}
-        working-directory: helper-mod
-        run: gradle build -Pmc=${{ matrix.mc }} --no-daemon --stacktrace
-      - name: Переименование
+      - name: Сборка агента (совместим с Java 8+)
         run: |
-          mkdir -p out
-          cp helper-mod/build/libs/aurora-helper-1.0.0+${{ matrix.mc }}.jar out/aurora-helper-${{ matrix.mc }}.jar
+          mkdir -p overlay-agent/build out
+          javac --release 8 -Xlint:-options -encoding UTF-8 -d overlay-agent/build $(find overlay-agent/src -name '*.java')
+          jar cfm out/aurora-overlay.jar overlay-agent/MANIFEST.MF -C overlay-agent/build .
+          ls -la out
       - uses: actions/upload-artifact@v4
         with:
-          name: helper-${{ matrix.mc }}
+          name: helper-agent
           path: out/*.jar
