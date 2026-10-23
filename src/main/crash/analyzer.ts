@@ -111,16 +111,27 @@ export function analyzeCrash(inst: Instance, exitCode: number | null, logLines: 
   if (fabricBlock) {
     const lines = fabricBlock[1].split('\n').map((l) => l.trim()).filter((l) => /^[-*]|requires|incompatible|is missing|which is missing|breaks/i.test(l))
     const involved = new Set<string>()
-    for (const l of lines) for (const m of l.matchAll(/'([^']+)' \(([\w-]+)\)/g)) involved.add(`${m[1]} (${m[2]})`)
+    for (const l of lines) {
+      for (const m of l.matchAll(/'([^']+)' \(([\w-]+)\)/g)) {
+        if (!['minecraft', 'java', 'fabricloader', 'quilt_loader'].includes(m[2])) involved.add(`${m[1]} (${m[2]})`)
+      }
+    }
     const missing = lines.filter((l) => /missing/i.test(l))
+    const wrongGame = lines.filter((l) => /of 'Minecraft' \(minecraft\)/.test(l))
     add({
       severity: 'high',
-      title: missing.length ? 'Не хватает зависимостей модов' : 'Моды несовместимы между собой',
+      title: missing.length
+        ? 'Не хватает зависимостей модов'
+        : wrongGame.length
+          ? `Мод сделан для другой версии Minecraft (у вас ${inst.mcVersion})`
+          : 'Моды несовместимы между собой',
       detail: lines.slice(0, 12).join('\n') || 'Загрузчик Fabric/Quilt отказался загружать этот набор модов.',
       mods: [...involved],
       fix: missing.length
         ? 'Установите недостающие моды нужных версий (вкладка «Моды» → «Добавить»), часто это Fabric API.'
-        : 'Удалите или обновите один из указанных модов, чтобы версии совпадали.'
+        : wrongGame.length
+          ? `Удалите ${[...involved].join(', ') || 'этот мод'} или скачайте его версию для Minecraft ${inst.mcVersion} (вкладка «Моды» → «Добавить»).`
+          : 'Удалите или обновите один из указанных модов, чтобы версии совпадали.'
     })
   }
 
