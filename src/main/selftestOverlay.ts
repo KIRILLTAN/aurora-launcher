@@ -138,12 +138,7 @@ export async function overlaySelfTest(acc: Account, outDir: string, log: Log): P
   if (!ok) return
   saveInstance({ ...getInstance(world.id), gameArgs: '--quickPlaySingleplayer world', width: 1280, height: 720 })
   // без экрана первичной настройки (доступность), иначе Quick Play не стартует
-  fs.writeFileSync(path.join(gameDir(world.id), 'options.txt'), 'onboardAccessibility:false
-joinedFirstServer:true
-skipMultiplayerWarning:true
-tutorialStep:none
-renderDistance:6
-')
+  fs.writeFileSync(path.join(gameDir(world.id), 'options.txt'), ['onboardAccessibility:false', 'joinedFirstServer:true', 'skipMultiplayerWarning:true', 'tutorialStep:none', 'renderDistance:6', ''].join('\n'))
   await launchInstance(world.id, acc.id)
   const inGame = await waitFor(() => {
     const d = overlayDiagnostics().find((x) => x.instance === world.id)
