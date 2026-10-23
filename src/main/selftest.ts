@@ -6,6 +6,8 @@ import { createInstance, getInstance } from './instances'
 import { ensureInstalled, launchInstance, stopInstance } from './minecraft/launch'
 import { TaskHandle } from './events'
 import { updateSettings } from './settings'
+import { modrinthVersions } from './catalog/modrinth'
+import { installModrinthProject } from './catalog/modpacks'
 
 /**
  * Самопроверка для CI (AURORA_SELFTEST=<папка>): скриншоты страниц,
@@ -60,6 +62,7 @@ export async function runSelfTest(win: BrowserWindow, outDir: string): Promise<v
 
     // Реальный запуск игры
     const lines: string[] = []
+    let onExit: ((p: never) => void) | undefined
     const started = new Promise<string>((resolve) => {
       const timer = setInterval(() => {
         const text = lines.join('\n')
@@ -76,7 +79,10 @@ export async function runSelfTest(win: BrowserWindow, outDir: string): Promise<v
     const orig = win.webContents.send.bind(win.webContents)
     win.webContents.send = ((ch: string, payload: { line: string; analysis?: unknown }) => {
       if (ch === 'game:log') lines.push(payload.line)
-      if (ch === 'game:exit') log('game-exit', JSON.stringify(payload).slice(0, 4000))
+      if (ch === 'game:exit') {
+        log('game-exit', JSON.stringify(payload).slice(0, 300))
+        onExit?.(payload as never)
+      }
       return orig(ch, payload)
     }) as typeof win.webContents.send
     await launchInstance(vanilla.id, acc.id)
@@ -87,6 +93,20 @@ export async function runSelfTest(win: BrowserWindow, outDir: string): Promise<v
     fs.writeFileSync(path.join(outDir, 'game.log'), lines.join('\n'))
     stopInstance(vanilla.id)
     await wait(5000)
+
+    // Краш: мод для другой версии игры — анализатор должен назвать его
+    const crashInst = createInstance({ name: 'Тест краш', mcVersion: '1.21.1', loader: 'fabric', jvmArgs: '-Djava.awt.headless=true' })
+    const vers = await modrinthVersions('sodium', '1.20.1', 'fabric')
+    await installModrinthProject(crashInst.id, 'sodium', 'mod', vers[0].id)
+    const exited = new Promise<{ analysis?: { title: string; causes: { title: string }[]; suspectedMods: string[] } }>((resolve) => {
+      onExit = resolve
+      setTimeout(() => resolve({}), 5 * 60_000)
+    })
+    await launchInstance(crashInst.id, acc.id)
+    const ex = await exited
+    log('crash-analysis', ex.analysis ? `${ex.analysis.title} | ${ex.analysis.causes.map((c) => c.title).join(' ; ')} | mods: ${ex.analysis.suspectedMods.join(', ')}` : 'нет анализа')
+    await wait(3000)
+    await shot('dialog-crash')
   } catch (e) {
     log('fatal', (e as Error).stack || String(e))
   }

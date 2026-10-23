@@ -27,7 +27,19 @@ export async function getRemoteInfo(): Promise<RemoteInfo> {
     } catch {
       /* релизов может ещё не быть */
     }
-    const info: RemoteInfo = { news: news.items || [], featured: featured.packs || [], motd: news.motd, latestVersion }
+    const packs = featured.packs || []
+    // обложки для сборок с Modrinth подтягиваем автоматически
+    await Promise.all(
+      packs.map(async (p) => {
+        if (p.image || !p.ref.startsWith('modrinth:')) return
+        try {
+          p.image = (await fetchJson<{ icon_url?: string }>(`https://api.modrinth.com/v2/project/${p.ref.slice(9)}`)).icon_url
+        } catch {
+          /* без обложки */
+        }
+      })
+    )
+    const info: RemoteInfo = { news: news.items || [], featured: packs, motd: news.motd, latestVersion }
     writeJson(cache, info)
     return info
   } catch {

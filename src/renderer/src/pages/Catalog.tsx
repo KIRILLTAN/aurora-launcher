@@ -117,7 +117,7 @@ export function CatalogBrowser({ type, instance, onInstalled }: { type: CatalogT
           </select>
         )}
         {source === 'modrinth' && (
-          <select className="select" style={{ width: 170 }} value={sort} onChange={(e) => setSort(e.target.value)}>
+          <select className="select" style={{ width: 200 }} value={sort} onChange={(e) => setSort(e.target.value)}>
             <option value="relevance">По релевантности</option>
             <option value="downloads">По загрузкам</option>
             <option value="follows">По популярности</option>

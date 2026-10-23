@@ -349,3 +349,8 @@ input[type='range']::-webkit-slider-thumb { -webkit-appearance: none; width: 18p
   .catalog-list { grid-template-columns: 1fr; }
 }
 .spin { animation: spin 1s linear infinite; }
+.btn.lg.icon { width: 48px; padding: 0; }
+.seg button { white-space: nowrap; }
+.page-header > div:first-child { min-width: 0; }
+.page-header h1 { white-space: nowrap; }
+.page-header .actions { flex-wrap: wrap; justify-content: flex-end; }
