@@ -254,7 +254,9 @@ export async function installJava(major: number, task?: TaskHandle, imageType: '
   const archive = path.join(dirs.cache(), pkg.name)
   let downloaded = 0
   task?.update(0.02, `Скачивание ${asset.release_name}`)
-  await downloadFile({ url: pkg.link, path: archive, size: pkg.size }, (n) => {
+  // зеркало Tsinghua на случай, если GitHub недоступен
+  const mirror = `https://mirrors.tuna.tsinghua.edu.cn/Adoptium/${major}/${asset.binary.image_type}/${adoptiumArch()}/${adoptiumOs()}/${pkg.name}`
+  await downloadFile({ url: pkg.link, path: archive, size: pkg.size, mirrors: [mirror] }, (n) => {
     downloaded += n
     task?.update(0.02 + 0.8 * (downloaded / pkg.size), `Скачивание ${asset.release_name}: ${(downloaded / 1048576).toFixed(0)} / ${(pkg.size / 1048576).toFixed(0)} МБ`)
   }, 3, task?.signal)

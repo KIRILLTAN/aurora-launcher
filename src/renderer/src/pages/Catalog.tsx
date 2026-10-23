@@ -85,16 +85,24 @@ export function CatalogBrowser({ type, instance, onInstalled }: { type: CatalogT
         }
         const files = await api.installProject(item.source, instance.id, item.id, type, versionId)
         toast(`Установлено: ${files.join(', ')}`, 'success')
+        // шейдерпак без Iris/Oculus не заработает — ставим их сразу
+        if (type === 'shader') {
+          const st = await api.shaderStatus(instance.id)
+          if (!st.installed && st.supported) {
+            const extra = await api.ensureShaders(instance.id)
+            if (extra.length) toast(`Для шейдеров добавлено: ${extra.join(', ')}`, 'success')
+          } else if (!st.supported && st.reason) toast(st.reason, 'error')
+        }
         onInstalled?.()
       }
     } catch (e) {
-      toast((e as Error).message, 'error')
+      const msg = (e as Error).message
+      if (msg !== 'Отменено') toast(msg, 'error')
     } finally {
       setBusy((b) => ({ ...b, [item.id]: false }))
     }
   }
 
-  const needsKey = source === 'curseforge' && !settings?.hasCurseforgeKey
 
   return (
     <div>
@@ -127,20 +135,8 @@ export function CatalogBrowser({ type, instance, onInstalled }: { type: CatalogT
         )}
       </div>
 
-      {needsKey && (
-        <div className="card pad row" style={{ marginBottom: 16 }}>
-          <KeyRound size={20} />
-          <div className="grow">
-            <b>Нужен ключ CurseForge API</b>
-            <div className="small muted">CurseForge выдаёт его бесплатно на console.curseforge.com. Вставьте ключ в Настройках.</div>
-          </div>
-          <button className="btn" onClick={() => api.openUrl('https://console.curseforge.com/')}><ExternalLink size={14} /> Получить</button>
-          <button className="btn primary" onClick={() => go('settings')}>В настройки</button>
-        </div>
-      )}
-
       {loading && <div className="row muted" style={{ padding: 20 }}><Spinner /> Поиск…</div>}
-      {error && !needsKey && <div className="card pad" style={{ color: 'var(--danger)' }}>{error}</div>}
+      {error && <div className="card pad" style={{ color: "var(--danger)" }}>{error}</div>}
       {res && !loading && res.items.length === 0 && <div className="empty"><ListFilter size={40} />Ничего не найдено</div>}
       {res && !loading && (
         <div className="catalog-list">

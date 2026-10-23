@@ -443,9 +443,17 @@ export default function SkinsPage() {
       exportFile()
       toast('Файл скина сохранён. Загрузите его на странице Ely.by → «Сменить скин».')
       api.openUrl('https://ely.by/skins')
+    } else if (account.type === 'offline') {
+      try {
+        await api.setOfflineSkin(account.id, toDataUrl(), slim)
+        toast(`Скин установлен на «${account.name}». Он будет виден в игре со следующего запуска.`, 'success')
+        useStore.getState().refreshAccounts()
+      } catch (e) {
+        toast((e as Error).message, 'error')
+      }
     } else {
       exportFile()
-      toast('Скин экспортирован в PNG. Для оффлайн-аккаунта загрузите его на Ely.by или в свой скин-сервер.')
+      toast('Скин экспортирован в PNG — загрузите его на сайте вашего скин-сервера.')
     }
   }
 

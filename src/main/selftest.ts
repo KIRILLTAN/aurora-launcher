@@ -11,6 +11,7 @@ import { ensureInstalled, launchInstance, stopInstance } from './minecraft/launc
 import { TaskHandle, cancelTask } from './events'
 import { updateSettings } from './settings'
 import { modrinthVersions } from './catalog/modrinth'
+import { overlaySelfTest } from './selftestOverlay'
 import { installModrinthProject, installModrinthPack } from './catalog/modpacks'
 
 /**
@@ -37,6 +38,13 @@ export async function runSelfTest(win: BrowserWindow, outDir: string): Promise<v
     const acc = addOffline('AuroraTest')
     await wait(4000)
     await win.webContents.executeJavaScript('window.__aurora.getState().refresh()')
+
+    // оверлей-помощник на разных загрузчиках, мир с лутом, скин оффлайн-аккаунта, зеркала
+    try {
+      await overlaySelfTest(acc, outDir, log)
+    } catch (e) {
+      log('overlay-fatal', (e as Error).stack || String(e))
+    }
 
     const vanilla = createInstance({ name: 'Тест Fabric 1.21.1', mcVersion: '1.21.1', loader: 'fabric' })
     for (const [loader, mc] of [['forge', '1.20.1'], ['neoforge', '1.21.1'], ['forge', '1.12.2']] as const) {
@@ -99,9 +107,6 @@ export async function runSelfTest(win: BrowserWindow, outDir: string): Promise<v
     log('launch-fabric-1.21.1', res)
     await wait(20000)
     await shot('during-game')
-    log('helper', lines.some((l) => l.includes('Aurora Helper loaded')) ? 'ok' : 'НЕ загрузился')
-    const helperErr = lines.find((l) => /aurora_helper|AuroraHelper/.test(l) && /error|fail/i.test(l))
-    if (helperErr) log('helper-error', helperErr)
     fs.writeFileSync(path.join(outDir, 'game.log'), lines.join('\n'))
     stopInstance(vanilla.id)
     await wait(5000)

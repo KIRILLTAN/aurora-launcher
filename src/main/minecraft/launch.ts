@@ -2,7 +2,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { spawn, type ChildProcess } from 'child_process'
-import { app, BrowserWindow } from 'electron'
+import { app } from 'electron'
 import type { Instance, JavaInstall } from '@shared/types'
 import { dirs, getSettings } from '../settings'
 import { emit, TaskHandle } from '../events'
@@ -14,12 +14,16 @@ import { cachedJavas, detectJavas, installJava, launchBinary, pickJava, probeJav
 import { installVersion, collectLibraries, clientJarPath, nativesDir, ensureAuthlibInjector } from './install'
 import { installLoader } from './loaders'
 import { optimizedJvmArgs, autoMemory } from './jvm'
-import { applyHelper } from '../helper'
+import { removeLegacyHelper } from '../helper'
+import { prepareOverlay } from '../overlay'
+import { mainWindow } from '../events'
 import { autoPush } from '../sync'
 import { resolveVersion, rulesAllow, type Argument, type ResolvedVersion } from './versions'
 
 interface Running {
   proc: ChildProcess
+  /** игру закрыли кнопкой в лаунчере — это не краш */
+  stoppedByUser?: boolean
   startedAt: number
   log: string[]
   java: JavaInstall
@@ -32,7 +36,10 @@ export function runningIds(): string[] {
 }
 
 export function stopInstance(id: string): void {
-  running.get(id)?.proc.kill()
+  const r = running.get(id)
+  if (!r) return
+  r.stoppedByUser = true
+  r.proc.kill()
 }
 
 export function getLog(id: string): string[] {
@@ -154,8 +161,7 @@ export async function launchInstance(id: string, accountId: string | undefined, 
     const java = await resolveJava(inst, required, task)
 
     const gdir = gameDir(id)
-    task.detail('Подготовка модов')
-    await applyHelper(inst)
+    removeLegacyHelper(inst)
     const libs = collectLibraries(v)
     const jar = clientJarPath(v.id)
     const classpath = [...libs.classpath.filter((p) => exists(p)), exists(jar) ? jar : clientJarPath(v.rootId)]
@@ -198,6 +204,9 @@ export async function launchInstance(id: string, accountId: string | undefined, 
     jvm.push(...optimizedJvmArgs(s.jvmPreset, java.major, maxMem))
     jvm.push(...splitArgs(inst.jvmArgs ?? s.jvmArgs))
     jvm.push('-Dlog4j2.formatMsgNoLookups=true')
+    task.detail('Подготовка помощника')
+    const overlay = await prepareOverlay(inst, v).catch((e: Error) => ({ arg: null, reason: e.message }))
+    if (overlay.arg) jvm.push(overlay.arg)
     if (auth.injector) {
       task.detail('Подготовка authlib-injector')
       const injector = await ensureAuthlibInjector()
@@ -226,6 +235,12 @@ export async function launchInstance(id: string, accountId: string | undefined, 
       game.push('--server', host, '--port', port || '25565')
     }
     if (inst.fullscreen) game.push('--fullscreen')
+    // прокси/VPN из настроек — для входа, скинов и Realms внутри игры
+    const px = s.proxy
+    if (px?.enabled && px.game && px.type === 'socks5' && px.host && px.port) {
+      game.push('--proxyHost', px.host, '--proxyPort', String(px.port))
+      if (px.user) game.push('--proxyUser', px.user, '--proxyPass', px.pass || '')
+    }
     game.push(...splitArgs(inst.gameArgs))
     game = game.filter((g, i, arr) => !(g === '--quickPlayPath' || arr[i - 1] === '--quickPlayPath'))
 
@@ -236,7 +251,11 @@ export async function launchInstance(id: string, accountId: string | undefined, 
     const logFile = path.join(ensureDir(path.join(gdir, 'logs')), 'aurora-launcher.log')
     const out = fs.createWriteStream(logFile)
     const masked = args.map((a) => (a === auth.accessToken && a !== '0' ? '••••••' : a))
-    out.write(`Aurora Launcher ${app.getVersion()} | ${inst.name} | ${v.id}\nJava: ${java.path} (${java.version})\n${bin} ${masked.join(' ')}\n\n`)
+    out.write(
+      `Aurora Launcher ${app.getVersion()} | ${inst.name} | ${v.id}\nJava: ${java.path} (${java.version})\nПамять: ${maxMem} МБ\n` +
+        (overlay.reason ? `Помощник: ${overlay.reason}\n` : '') +
+        `${bin} ${masked.join(' ')}\n\n`
+    )
 
     const proc = spawn(bin, args, { cwd: gdir, windowsHide: false, env: { ...process.env, JAVA_TOOL_OPTIONS: undefined } })
     if (s.highPriority && proc.pid) {
@@ -258,6 +277,7 @@ export async function launchInstance(id: string, accountId: string | undefined, 
       emit('game:log', { instanceId: id, line: clean, level })
     }
     const parse = createLogParser(push)
+    if (overlay.reason) push(`[Aurora] Помощник F6 не запущен: ${overlay.reason}`, 'warn')
     proc.stdout?.setEncoding('utf8')
     proc.stderr?.setEncoding('utf8')
     proc.stdout?.on('data', parse)
@@ -273,12 +293,13 @@ export async function launchInstance(id: string, accountId: string | undefined, 
       cur.lastPlayed = Date.now()
       cur.playTime = (cur.playTime || 0) + Math.round((Date.now() - r.startedAt) / 1000)
       saveInstance(cur)
-      const crashed = code !== 0 && code !== null && code !== 130 && code !== 143
+      const crashed = !r.stoppedByUser && code !== 0 && code !== null && code !== 130 && code !== 143
       const analysis = crashed ? analyzeCrash(cur, code, r.log, r.startedAt) : null
       if (running.size === 0 || crashed) {
-        for (const w of BrowserWindow.getAllWindows()) {
-          w.show()
-          if (crashed) w.focus()
+        const main = mainWindow()
+        if (main) {
+          main.show()
+          if (crashed) main.focus()
         }
       }
       emit('game:exit', { instanceId: id, code, analysis, java: `${java.version} (${java.path})` })

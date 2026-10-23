@@ -225,6 +225,7 @@ function ModsTab({ inst }: { inst: Instance }) {
 function ContentTab({ inst, type, folder }: { inst: Instance; type: 'resourcepack' | 'shader'; folder: string }) {
   return (
     <div className="col">
+      {type === 'shader' && <ShaderSupport inst={inst} />}
       <div className="row">
         <span className="muted">Файлы лежат в папке {folder}. Нажмите «Установить» у нужного пакета.</span>
         <span className="grow" />
@@ -422,6 +423,46 @@ function ScreenshotsTab({ inst }: { inst: Instance }) {
         <Modal title={open.file} size="wide" onClose={() => setOpen(null)} footer={<button className="btn" onClick={() => api.showItem(open.path)}><FolderOpen size={15} /> Показать в папке</button>}>
           <img src={open.thumb} style={{ width: '100%', borderRadius: 12, imageRendering: 'auto' }} />
         </Modal>
+      )}
+    </div>
+  )
+}
+
+/** Шейдерам нужен Iris/Oculus — показываем статус и ставим в один клик. */
+function ShaderSupport({ inst }: { inst: Instance }) {
+  const { toast } = useStore()
+  const [st, setSt] = useState<{ supported: boolean; installed?: string; reason?: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const load = (): void => void api.shaderStatus(inst.id).then(setSt).catch(() => undefined)
+  useEffect(load, [inst.id])
+  if (!st) return null
+  return (
+    <div className="card pad row">
+      <Sun size={20} color={st.installed ? 'var(--ok)' : 'var(--warn)'} />
+      <div className="grow">
+        <b>{st.installed ? `Шейдеры включены: ${st.installed}` : st.supported ? 'Для шейдеров нужен Iris или Oculus' : 'Шейдеры недоступны'}</b>
+        <div className="small muted">
+          {st.installed
+            ? 'Выберите шейдер в игре: Настройки → Настройки графики → Пакеты шейдеров.'
+            : st.supported
+              ? 'Лаунчер сам поставит нужные моды (Iris + Sodium или Oculus + Embeddium) при установке шейдера или по кнопке.'
+              : st.reason}
+        </div>
+      </div>
+      {!st.installed && st.supported && (
+        <button className="btn primary" disabled={busy} onClick={async () => {
+          setBusy(true)
+          try {
+            const files = await api.ensureShaders(inst.id)
+            toast(`Поддержка шейдеров установлена: ${files.join(', ')}`, 'success')
+            load()
+          } catch (e) {
+            const msg = (e as Error).message
+            if (msg !== 'Отменено') toast(msg, 'error')
+          } finally {
+            setBusy(false)
+          }
+        }}>{busy ? <Spinner /> : <Sun size={15} />} Включить шейдеры</button>
       )}
     </div>
   )

@@ -80,6 +80,11 @@ export const useStore = create<State>((set, get) => ({
   },
 
   toast: (text, kind = 'info') => {
+    // отмена пользователем — не ошибка
+    if (text === 'Отменено') {
+      text = 'Операция отменена'
+      kind = 'info'
+    }
     const id = ++toastId
     set({ toasts: [...get().toasts, { id, kind, text }].slice(-5) })
     setTimeout(() => get().dismissToast(id), kind === 'error' ? 8000 : 4000)

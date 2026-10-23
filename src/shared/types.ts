@@ -76,6 +76,12 @@ export interface Settings {
   jvmPreset: 'g1' | 'zgc' | 'custom'
   /** повышенный приоритет процесса игры */
   highPriority: boolean
+  /** настройки оверлея-помощника (F6) */
+  overlay?: OverlayConfig
+  /** свой VPN/прокси */
+  proxy?: ProxyConfig
+  /** зеркала для Modrinth, CurseForge и Mojang: авто, всегда или никогда */
+  mirrors: 'auto' | 'always' | 'never'
 }
 
 export interface Task {
@@ -286,4 +292,29 @@ export interface ImportPreview {
   mods: number
   worlds: number
   sizeMb: number
+}
+
+export interface OverlayConfig {
+  loot: boolean
+  worldIcons: boolean
+  radius: number
+  arrows: boolean
+  coords: boolean
+  fps: boolean
+  clock: boolean
+  armor: boolean
+  offhand: boolean
+  rightSide: boolean
+  maxLines: number
+}
+
+export interface ProxyConfig {
+  enabled: boolean
+  type: 'http' | 'socks5'
+  host: string
+  port: number
+  user?: string
+  pass?: string
+  /** передавать прокси игре (вход, скины, Realms) */
+  game: boolean
 }

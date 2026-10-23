@@ -5,7 +5,7 @@ import { app, shell } from 'electron'
 import type { Instance, SyncRemoteInstance, SyncStatus } from '@shared/types'
 import { getSettings } from './settings'
 import { createInstance, gameDir, getInstance, listInstances, saveInstance } from './instances'
-import { fetchJson, downloadAll, sha1File, USER_AGENT, type DownloadItem } from './util/net'
+import { fetchJson, httpFetch, downloadAll, sha1File, USER_AGENT, type DownloadItem } from './util/net'
 import { readJson, writeJson, exists, ensureDir, safeJoin } from './util/store'
 import { sealJson, unsealJson } from './util/secure'
 import { emit, withTask, withCancellableTask, type TaskHandle } from "./events"
@@ -93,7 +93,7 @@ interface Provider {
 
 function gh(token: string) {
   return async <T,>(p: string, init: RequestInit = {}): Promise<T> => {
-    const res = await fetch('https://api.github.com' + p, {
+    const res = await httpFetch('https://api.github.com' + p, {
       ...init,
       headers: {
         Authorization: `Bearer ${token}`,
@@ -139,7 +139,7 @@ async function githubProvider(c: SyncConfig): Promise<Provider> {
       const f = (await gist()).files[name]
       if (!f) return null
       if (f.truncated || f.content === undefined) {
-        const r = await fetch(f.raw_url, { headers: { Authorization: `Bearer ${token}`, 'User-Agent': USER_AGENT } })
+        const r = await httpFetch(f.raw_url, { headers: { Authorization: `Bearer ${token}`, 'User-Agent': USER_AGENT } })
         return r.ok ? r.text() : null
       }
       return f.content

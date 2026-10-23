@@ -1,12 +1,19 @@
 import fs from 'fs'
 import path from 'path'
+import { app } from 'electron'
 import { dirs } from './settings'
-import { USER_AGENT, fetchJson } from './util/net'
-import { getMicrosoftToken, getMcProfile, updateAccountSkin } from './auth/accounts'
+import { USER_AGENT, fetchJson, httpFetch } from './util/net'
+import { getMicrosoftToken, getMcProfile, updateAccountSkin, setOfflineAccountSkin } from './auth/accounts'
 
 /** Скачивает картинку (скин/плащ) и отдаёт data URL — обходит CORS в интерфейсе. */
 export async function fetchImage(url: string): Promise<string> {
-  const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT } })
+  if (!/^https?:/i.test(url)) {
+    // локальный файл (скин оффлайн-аккаунта) — только из папки лаунчера
+    const file = path.resolve(url.split('#')[0])
+    if (!file.startsWith(path.resolve(app.getPath('userData'), 'offline-skins'))) throw new Error('Недопустимый путь')
+    return 'data:image/png;base64,' + fs.readFileSync(file).toString('base64')
+  }
+  const res = await httpFetch(url, { headers: { 'User-Agent': USER_AGENT } })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   const buf = Buffer.from(await res.arrayBuffer())
   return `data:${res.headers.get('content-type') || 'image/png'};base64,${buf.toString('base64')}`
@@ -83,4 +90,8 @@ export async function uploadSkinMicrosoft(accountId: string, dataUrl: string, sl
   const prof = await getMcProfile(token)
   const active = prof.skins?.find((s) => s.state === 'ACTIVE')?.url
   if (active) updateAccountSkin(accountId, active)
+}
+
+export function setOfflineSkinFromData(accountId: string, dataUrl: string, slim: boolean): void {
+  setOfflineAccountSkin(accountId, dataUrlToBuffer(dataUrl), slim)
 }

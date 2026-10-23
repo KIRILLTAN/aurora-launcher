@@ -7,17 +7,21 @@ const GAME = 432
 export const CF_CLASS = { mod: 6, modpack: 4471, resourcepack: 12, shader: 6552 } as const
 const LOADER_ID: Record<string, number> = { forge: 1, fabric: 4, quilt: 5, neoforge: 6 }
 
-function headers(): Record<string, string> {
+/** Без своего ключа CurseForge работает через зеркало MCIM (ключ там не нужен). */
+const MIRROR_API = 'https://mod.mcimirror.top/curseforge/v1'
+
+function base(): { url: string; headers: Record<string, string> } {
   const key = getSettings().curseforgeKey
-  if (!key) throw new Error('Для CurseForge нужен API-ключ: получите его на console.curseforge.com и вставьте в Настройки')
-  return { 'x-api-key': key }
+  return key ? { url: API, headers: { 'x-api-key': key } } : { url: MIRROR_API, headers: {} }
 }
 
 export function cfGet<T>(path: string): Promise<T> {
-  return fetchJson<T>(API + path, { headers: headers() })
+  const b = base()
+  return fetchJson<T>(b.url + path, { headers: b.headers })
 }
 export function cfPost<T>(path: string, body: unknown): Promise<T> {
-  return fetchJson<T>(API + path, { method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  const b = base()
+  return fetchJson<T>(b.url + path, { method: 'POST', headers: { ...b.headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
 }
 
 interface CfMod {

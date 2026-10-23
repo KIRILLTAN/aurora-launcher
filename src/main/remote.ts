@@ -13,7 +13,8 @@ import { emit } from './events'
  * Достаточно отредактировать эти файлы на GitHub — лаунчер подхватит изменения.
  */
 export async function getRemoteInfo(): Promise<RemoteInfo> {
-  const repo = getSettings().githubRepo || 'KIRILLTAN/aurora-launcher'
+  // адрес зашит: новости, сборки и обновления — только из официального репозитория
+  const repo = 'KIRILLTAN/aurora-launcher'
   const base = `https://raw.githubusercontent.com/${repo}/main/remote`
   const cache = path.join(app.getPath('userData'), 'remote-cache.json')
   try {

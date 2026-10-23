@@ -341,6 +341,7 @@ public final class Agent {
         }
         Object options = get(mc, MC, "options");
         if (options != null) {
+            if (Boolean.TRUE.equals(get(options, OPTIONS, "hideGui"))) sb.append(",\"hideGui\":true");
             Object fov = call(options, OPTIONS, "fov");
             if (fov != null) fov = call(fov, OPTION_INSTANCE, "get");
             else fov = get(options, OPTIONS, "fov");

@@ -128,6 +128,19 @@ export default function App() {
       </div>
 
       <div className="tasks-dock">
+        {(update.state === 'downloading' || update.state === 'available') && (
+          <div className="task running">
+            <div className="row">
+              <Download size={18} color="var(--a2)" />
+              <div className="title grow ellipsis">Обновление лаунчера {update.version ? 'до ' + update.version : ''}</div>
+              <span className="small muted">{Math.round((update.progress || 0) * 100)}%</span>
+            </div>
+            <div className="detail">Скачивается в фоне — по готовности появится кнопка «Обновить»</div>
+            <div className={`progress ${!update.progress ? 'indeterminate' : ''}`}>
+              <div style={{ transform: `scaleX(${update.progress || 0})` }} />
+            </div>
+          </div>
+        )}
         {tasks.slice(0, 4).map((t) => (
           <div key={t.id} className={`task ${t.status}`}>
             <div className="row">

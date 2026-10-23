@@ -107,6 +107,10 @@ export const api = {
   saveSkin: (name: string, data: string, slim: boolean) => call<string>('skins:save', name, data, slim),
   deleteSkin: (file: string) => call('skins:delete', file),
   uploadSkin: (accountId: string, data: string, slim: boolean) => call('skins:uploadMs', accountId, data, slim),
+  setOfflineSkin: (accountId: string, data: string, slim: boolean) => call('skins:setOffline', accountId, data, slim),
+  netTest: () => call<{ name: string; ok: boolean; ms: number; error?: string }[]>('net:test'),
+  shaderStatus: (id: string) => call<{ supported: boolean; installed?: string; reason?: string }>('shaders:status', id),
+  ensureShaders: (id: string) => call<string[]>('shaders:ensure', id),
   openSkinsFolder: () => call('skins:openFolder'),
 
   syncStatus: () => call<SyncStatus>('sync:status'),

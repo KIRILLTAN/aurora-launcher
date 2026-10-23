@@ -3,10 +3,19 @@ import type { Task } from '@shared/types'
 import { uid } from './util/store'
 import { CancelledError, isCancel } from './util/cancel'
 
+let main: BrowserWindow | null = null
+
+/** Главное окно лаунчера (оверлеи игры — отдельные окна, им события не нужны). */
+export function setMainWindow(w: BrowserWindow): void {
+  main = w
+}
+export function mainWindow(): BrowserWindow | null {
+  return main && !main.isDestroyed() ? main : null
+}
+
 export function emit(channel: string, payload?: unknown): void {
-  for (const w of BrowserWindow.getAllWindows()) {
-    if (!w.isDestroyed()) w.webContents.send(channel, payload)
-  }
+  const w = mainWindow()
+  if (w) w.webContents.send(channel, payload)
 }
 
 const active = new Map<string, TaskHandle>()

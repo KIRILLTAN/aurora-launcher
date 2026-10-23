@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { FolderOpen, Github, RefreshCw, KeyRound, Sparkles, MemoryStick, Palette, Rocket, ExternalLink, Keyboard } from 'lucide-react'
-import type { Settings } from '@shared/types'
+import type { Settings, OverlayConfig } from '@shared/types'
+import { NetworkCard } from '../components/Network'
 import { api } from '../api'
 import { useStore } from '../store'
 import { Switch } from '../components/ui'
@@ -12,6 +13,20 @@ const ACCENTS: { id: Settings['accent']; label: string; grad: string }[] = [
   { id: 'sunset', label: 'Закат', grad: 'linear-gradient(135deg,#fde047,#fb923c,#f43f5e)' },
   { id: 'ice', label: 'Лёд', grad: 'linear-gradient(135deg,#e0f2fe,#7dd3fc,#818cf8)' }
 ]
+
+const OVERLAY_TOGGLES: [keyof OverlayConfig, string][] = [
+  ['loot', 'Лут списком'],
+  ['worldIcons', 'Иконки над лутом'],
+  ['armor', 'HUD брони'],
+  ['offhand', 'HUD щита / левой руки'],
+  ['arrows', 'Стрелки к луту'],
+  ['coords', 'Координаты'],
+  ['fps', 'FPS'],
+  ['clock', 'Часы'],
+  ['rightSide', 'Панель справа']
+]
+
+const DEFAULT_OVERLAY: OverlayConfig = { loot: true, worldIcons: true, radius: 24, arrows: true, coords: false, fps: false, clock: false, armor: true, offhand: true, rightSide: false, maxLines: 8 }
 
 export default function SettingsPage() {
   const { settings, setSettings, toast, update } = useStore()
@@ -30,6 +45,7 @@ export default function SettingsPage() {
       toast((e as Error).message, 'error')
     }
   }
+  const overlay = { ...DEFAULT_OVERLAY, ...(settings.overlay || {}) }
   const maxMem = Math.max(4096, Math.floor(((info?.totalMem || 8192) * 0.8) / 512) * 512)
 
   return (
@@ -56,13 +72,29 @@ export default function SettingsPage() {
           <h3 className="row"><Keyboard size={17} /> Кастомный помощник в игре</h3>
           <div className="setting-row">
             <div className="text">
-              <b>Aurora Helper — меню по F6</b>
+              <b>Aurora Helper — оверлей по F6</b>
               <span>
-                В игре нажмите <span className="kbd">F6</span>: список лута на земле с расстоянием и стрелкой-направлением, координаты, FPS, часы. Работает в сборках Fabric и Quilt для Minecraft 1.20.1 и 1.21.1 — мод добавляется сам при запуске.
+                Не мод: работает на ванилле и любом загрузчике (Minecraft 1.14.4+, Forge 1.17+). В игре нажмите <span className="kbd">F6</span> — меню, ↑↓ выбор, ←→ изменить. Игру лучше запускать в оконном режиме или «без рамки».
               </span>
             </div>
             <Switch on={settings.helperEnabled} onChange={(v) => patch({ helperEnabled: v })} />
           </div>
+          {settings.helperEnabled && (
+            <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              {OVERLAY_TOGGLES.map(([key, label]) => (
+                <div key={key} className="row" style={{ justifyContent: 'space-between', padding: '6px 2px' }}>
+                  <span className="small">{label}</span>
+                  <Switch on={!!overlay[key]} onChange={(v) => patch({ overlay: { ...overlay, [key]: v } })} />
+                </div>
+              ))}
+              <div className="row" style={{ justifyContent: 'space-between', padding: '6px 2px' }}>
+                <span className="small">Радиус лута</span>
+                <select className="select" style={{ width: 110, height: 32 }} value={overlay.radius} onChange={(e) => patch({ overlay: { ...overlay, radius: parseInt(e.target.value) } })}>
+                  {[8, 16, 24, 32, 48, 64].map((r) => <option key={r} value={r}>{r} блоков</option>)}
+                </select>
+              </div>
+            </div>
+          )}
           <div className="divider" />
           <h3 className="row"><Rocket size={17} /> Запуск</h3>
           <div className="setting-row">
@@ -131,7 +163,7 @@ export default function SettingsPage() {
           </div>
           <div className="field" style={{ opacity: settings.memoryAuto ? 0.55 : 1 }}>
             <label>Максимум памяти: {settings.memoryMax} МБ ({(settings.memoryMax / 1024).toFixed(1)} ГБ)</label>
-            <input type="range" min={1024} max={maxMem} step={512} value={settings.memoryMax} onChange={(e) => setSettings({ ...settings, memoryMax: parseInt(e.target.value) })} onMouseUp={() => patch({ memoryMax: settings.memoryMax })} />
+            <input type="range" min={1024} max={maxMem} step={512} value={settings.memoryMax} onChange={(e) => setSettings({ ...settings, memoryMax: parseInt(e.target.value) })} onPointerUp={() => patch({ memoryMax: settings.memoryMax })} onKeyUp={() => patch({ memoryMax: settings.memoryMax })} />
             <span className="hint">В системе {Math.round((info?.totalMem || 0) / 1024)} ГБ ОЗУ</span>
           </div>
           <div className="row" style={{ marginTop: 12 }}>
@@ -215,6 +247,11 @@ export default function SettingsPage() {
                   dev: 'Режим разработки — обновления отключены'
                 }[update.state]}
               </span>
+              {(update.state === 'downloading' || update.state === 'available') && (
+                <div className="progress" style={{ marginTop: 8 }}>
+                  <div style={{ transform: `scaleX(${update.progress || 0.02})` }} />
+                </div>
+              )}
             </div>
             {update.state === 'ready' ? (
               <button className="btn primary" onClick={() => api.installUpdate()}>Перезапустить</button>
@@ -222,12 +259,7 @@ export default function SettingsPage() {
               <button className="btn" onClick={() => api.checkUpdates()}><RefreshCw size={15} /> Проверить</button>
             )}
           </div>
-          <div className="field">
-            <label>Репозиторий новостей и сборок</label>
-            <input className="input mono" defaultValue={settings.githubRepo} onBlur={(e) => patch({ githubRepo: e.target.value.trim() || 'KIRILLTAN/aurora-launcher' })} />
-            <span className="hint">Лаунчер читает remote/news.json и remote/featured.json из этого репозитория GitHub.</span>
-          </div>
-          <div className="field" style={{ marginTop: 12 }}>
+          <div className="field" style={{ marginTop: 4 }}>
             <label>Свой Azure Client ID для входа Microsoft (необязательно)</label>
             <input className="input mono" defaultValue={settings.msClientId} placeholder="по умолчанию — встроенный" onBlur={(e) => patch({ msClientId: e.target.value.trim() })} />
           </div>
@@ -240,6 +272,8 @@ export default function SettingsPage() {
             <button className="btn ghost" onClick={() => api.openUrl('https://github.com/KIRILLTAN/aurora-launcher/issues')}>Сообщить об ошибке</button>
           </div>
         </div>
+
+        <NetworkCard />
       </div>
     </div>
   )

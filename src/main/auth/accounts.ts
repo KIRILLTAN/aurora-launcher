@@ -3,8 +3,9 @@ import path from 'path'
 import crypto from 'crypto'
 import type { Account } from '@shared/types'
 import { readJson, writeJson, uid } from '../util/store'
-import { fetchJson, USER_AGENT, HttpError } from '../util/net'
+import { fetchJson, httpFetch, USER_AGENT, HttpError } from '../util/net'
 import { getSettings, updateSettings } from '../settings'
+import { hasOfflineSkin, offlineSkinServer, setOfflineSkin, removeOfflineSkin } from './offlineSkins'
 
 interface Secret {
   msRefresh?: string
@@ -64,6 +65,8 @@ function upsert(acc: Account, secret: Secret): Account {
 }
 
 export function removeAccount(id: string): void {
+  const acc = loadAll().find((a) => a.id === id)
+  if (acc?.type === 'offline' && !loadAll().some((a) => a.id !== id && a.uuid === acc.uuid)) removeOfflineSkin(acc.uuid)
   saveAll(loadAll().filter((a) => a.id !== id))
   if (getSettings().selectedAccount === id) updateSettings({ selectedAccount: loadAll()[0]?.id })
 }
@@ -180,7 +183,7 @@ async function minecraftFromMs(msAccess: string): Promise<{ token: string; expir
       })
     }
   )
-  const xstsRes = await fetch('https://xsts.auth.xboxlive.com/xsts/authorize', {
+  const xstsRes = await httpFetch('https://xsts.auth.xboxlive.com/xsts/authorize', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'User-Agent': USER_AGENT },
     body: JSON.stringify({
@@ -253,7 +256,7 @@ interface YggAuth {
 export async function loginYggdrasil(server: string, username: string, password: string, serverName?: string): Promise<Account> {
   const clientToken = crypto.randomUUID().replace(/-/g, '')
   const base = yggBase(server)
-  const res = await fetch(`${base}/authenticate`, {
+  const res = await httpFetch(`${base}/authenticate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'User-Agent': USER_AGENT },
     body: JSON.stringify({ agent: { name: 'Minecraft', version: 1 }, username, password, clientToken, requestUser: true })
@@ -303,6 +306,10 @@ export async function getLaunchAuth(id: string): Promise<LaunchAuth> {
   const acc = strip(stored)
 
   if (stored.type === 'offline') {
+    // свой скин у оффлайн-аккаунта — через локальный скин-сервер и authlib-injector
+    if (hasOfflineSkin(acc.uuid)) {
+      return { account: acc, name: acc.name, uuid: acc.uuid, accessToken: '0', userType: 'mojang', xuid: '0', injector: await offlineSkinServer() }
+    }
     return { account: acc, name: acc.name, uuid: acc.uuid, accessToken: '0', userType: 'legacy', xuid: '0' }
   }
 
@@ -324,7 +331,7 @@ export async function getLaunchAuth(id: string): Promise<LaunchAuth> {
 
   // Yggdrasil: проверяем токен и обновляем при необходимости
   const base = yggBase(stored.server || ELY_SERVER)
-  const ok = await fetch(`${base}/validate`, {
+  const ok = await httpFetch(`${base}/validate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ accessToken: secret.accessToken, clientToken: secret.clientToken })
@@ -332,7 +339,7 @@ export async function getLaunchAuth(id: string): Promise<LaunchAuth> {
     .then((r) => r.ok)
     .catch(() => true) // нет сети — пробуем со старым токеном
   if (!ok) {
-    const r = await fetch(`${base}/refresh`, {
+    const r = await httpFetch(`${base}/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ accessToken: secret.accessToken, clientToken: secret.clientToken, requestUser: true })
@@ -359,6 +366,16 @@ export async function getMicrosoftToken(id: string): Promise<string> {
   const auth = await getLaunchAuth(id)
   if (auth.account.type !== 'microsoft') throw new Error('Загрузка скина доступна только для аккаунтов Microsoft')
   return auth.accessToken
+}
+
+/** Скин для оффлайн-аккаунта: хранится у лаунчера и раздаётся игре локальным скин-сервером. */
+export function setOfflineAccountSkin(id: string, png: Buffer, slim: boolean): void {
+  const list = loadAll()
+  const a = list.find((x) => x.id === id)
+  if (!a || a.type !== 'offline') throw new Error('Это не оффлайн-аккаунт')
+  // метка времени в адресе — чтобы интерфейс не показывал старый скин из кэша
+  a.skinUrl = `${setOfflineSkin(strip(a), png, slim)}#${Date.now()}`
+  saveAll(list)
 }
 
 export function updateAccountSkin(id: string, skinUrl: string): void {

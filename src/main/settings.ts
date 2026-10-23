@@ -33,7 +33,8 @@ function defaults(): Settings {
     animations: 'full',
     memoryAuto: true,
     jvmPreset: 'g1',
-    highPriority: true
+    highPriority: true,
+    mirrors: 'auto'
   }
 }
 
@@ -61,6 +62,7 @@ export function publicSettings(): Settings & { hasAnthropicKey: boolean; hasCurs
     ...s,
     anthropicKey: s.anthropicKey ? '••••' + s.anthropicKey.slice(-4) : '',
     curseforgeKey: s.curseforgeKey ? '••••' + s.curseforgeKey.slice(-4) : '',
+    proxy: s.proxy ? { ...s.proxy, pass: s.proxy.pass ? '••••' : '' } : undefined,
     hasAnthropicKey: !!s.anthropicKey,
     hasCurseforgeKey: !!s.curseforgeKey
   }

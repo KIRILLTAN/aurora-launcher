@@ -8,7 +8,7 @@ import type { ServerStatus, ModUpdate, WorldInfo, ScreenshotInfo } from '@shared
 import { gameDir, getInstance, instanceDir } from './instances'
 import { fetchJson, downloadFile, sha1File } from './util/net'
 import { exists, ensureDir, safeJoin } from './util/store'
-import { withTask } from './events'
+import { withTask, withCancellableTask } from './events'
 import { modsDir } from './mods'
 import { HELPER_FILE } from './helper'
 import { installModrinthProject } from './catalog/modpacks'
@@ -120,7 +120,7 @@ export function boostFps(instanceId: string): Promise<{ installed: string[]; ski
   const inst = getInstance(instanceId)
   const list = FPS_MODS[inst.loader]
   if (!list) throw new Error('Для ванильной сборки сначала выберите загрузчик (Fabric/Forge/NeoForge)')
-  return withTask('Ускорение FPS', async (t) => {
+  return withCancellableTask('Ускорение FPS', async (t) => {
     const present = fs.readdirSync(modsDir(instanceId)).join(' ').toLowerCase()
     if (present.includes('optifine')) throw new Error('В сборке есть OptiFine — он несовместим с Sodium/Embeddium. Удалите его и повторите.')
     const installed: string[] = []
@@ -140,6 +140,52 @@ export function boostFps(instanceId: string): Promise<{ installed: string[]; ski
     }
     return { installed, skipped }
   })
+}
+
+// ---------------- Шейдеры: Iris/Oculus подбираются под загрузчик ----------------
+
+interface ShaderPlan {
+  supported: boolean
+  installed?: string
+  mods: string[]
+  loader?: string
+  reason?: string
+}
+
+function shaderPlan(instanceId: string): ShaderPlan {
+  const inst = getInstance(instanceId)
+  const present = exists(path.join(gameDir(instanceId), 'mods')) ? fs.readdirSync(path.join(gameDir(instanceId), 'mods')).join(' ').toLowerCase() : ''
+  if (present.includes('optifine')) return { supported: true, installed: 'OptiFine', mods: [] }
+  for (const n of ['iris', 'oculus']) if (present.includes(n)) return { supported: true, installed: n === 'iris' ? 'Iris' : 'Oculus', mods: [] }
+  const modern = /^\d{2}\./.test(inst.mcVersion)
+  switch (inst.loader) {
+    case 'fabric':
+    case 'quilt':
+      return { supported: true, mods: ['iris', 'sodium'] }
+    case 'neoforge':
+      return inst.mcVersion === '1.20.1' ? { supported: true, mods: ['oculus', 'embeddium'], loader: 'forge' } : { supported: true, mods: ['iris', 'sodium'] }
+    case 'forge':
+      return modern || inst.mcVersion.startsWith('1.21')
+        ? { supported: false, mods: [], reason: 'Для Forge этой версии нет Iris/Oculus — используйте NeoForge или Fabric' }
+        : { supported: true, mods: ['oculus', 'embeddium'] }
+    default:
+      return { supported: false, mods: [], reason: 'Шейдерам нужен загрузчик модов — создайте сборку Fabric (ванилла шейдеры не поддерживает)' }
+  }
+}
+
+export function shaderStatus(instanceId: string): { supported: boolean; installed?: string; reason?: string } {
+  const p = shaderPlan(instanceId)
+  return { supported: p.supported, installed: p.installed, reason: p.reason }
+}
+
+/** Ставит всё, что нужно для шейдеров (Iris+Sodium или Oculus+Embeddium). */
+export async function ensureShaderSupport(instanceId: string): Promise<string[]> {
+  const p = shaderPlan(instanceId)
+  if (p.installed) return []
+  if (!p.supported) throw new Error(p.reason)
+  const out: string[] = []
+  for (const slug of p.mods) out.push(...(await installModrinthProject(instanceId, slug, 'mod', undefined, p.loader)))
+  return out
 }
 
 // ---------------- Обновления модов ----------------
@@ -173,12 +219,12 @@ export async function checkModUpdates(instanceId: string): Promise<ModUpdate[]> 
 }
 
 export function applyModUpdates(instanceId: string, updates: ModUpdate[]): Promise<number> {
-  return withTask('Обновление модов', async (t) => {
+  return withCancellableTask('Обновление модов', async (t) => {
     const dir = modsDir(instanceId)
     for (let i = 0; i < updates.length; i++) {
       const u = updates[i]
       t.update(i / updates.length, u.newFile)
-      await downloadFile({ url: u.url, path: safeJoin(dir, u.newFile), sha1: u.sha1 })
+      await downloadFile({ url: u.url, path: safeJoin(dir, u.newFile), sha1: u.sha1 }, undefined, 3, t.signal)
       if (u.file !== u.newFile) fs.rmSync(path.join(dir, path.basename(u.file)), { force: true })
     }
     return updates.length

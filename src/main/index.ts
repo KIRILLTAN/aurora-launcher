@@ -17,7 +17,9 @@ import { listLoaderVersions } from './minecraft/loaders'
 import { launchInstance, stopInstance, runningIds, getLog, reinstallInstance } from './minecraft/launch'
 import { askAi } from './crash/ai'
 import { getRemoteInfo, initUpdater, checkForUpdates, installUpdate, getUpdateStatus } from './remote'
-import { withTask, withCancellableTask, emit, cancelTask } from './events'
+import { withTask, withCancellableTask, emit, cancelTask, setMainWindow } from './events'
+import { overlayIcon, shutdownOverlay } from './overlay'
+import { applyProxy, testConnection } from './util/net'
 import { runSelfTest } from './selftest'
 import * as sync from './sync'
 import * as features from './features'
@@ -48,6 +50,7 @@ function createWindow(): void {
       sandbox: false
     }
   })
+  setMainWindow(win)
   win.on('ready-to-show', () => win?.show())
   win.on('maximize', () => emit('win:maximized', true))
   win.on('unmaximize', () => emit('win:maximized', false))
@@ -89,7 +92,10 @@ const handlers: Record<string, Handler> = {
     const p = { ...patch }
     if (p.anthropicKey?.startsWith('••••')) delete p.anthropicKey
     if (p.curseforgeKey?.startsWith('••••')) delete p.curseforgeKey
+    if (p.proxy?.pass === '••••') p.proxy = { ...p.proxy, pass: getSettings().proxy?.pass }
+    delete p.githubRepo
     updateSettings(p)
+    if (p.proxy) void applyProxy()
     return publicSettings()
   },
 
@@ -186,6 +192,7 @@ const handlers: Record<string, Handler> = {
   'skins:save': (name: string, data: string, slim: boolean) => skins.saveSkin(name, data, slim),
   'skins:delete': (file: string) => skins.deleteSkin(file),
   'skins:uploadMs': (accountId: string, data: string, slim: boolean) => skins.uploadSkinMicrosoft(accountId, data, slim),
+  'skins:setOffline': (accountId: string, data: string, slim: boolean) => skins.setOfflineSkinFromData(accountId, data, slim),
   'skins:openFolder': () => shell.openPath(dirs.skins()),
 
   // облачная синхронизация сборок
@@ -213,6 +220,10 @@ const handlers: Record<string, Handler> = {
   'features:screenshots': (id: string) => features.listScreenshots(id),
   'shell:showItem': (p: string) => shell.showItemInFolder(p),
   'task:cancel': (id: string) => cancelTask(id),
+  'overlay:icon': (id: string) => overlayIcon(id),
+  'net:test': () => testConnection(),
+  'shaders:status': (id: string) => features.shaderStatus(id),
+  'shaders:ensure': (id: string) => features.ensureShaderSupport(id),
 
   // онлайн и обновления
   'remote:info': () => getRemoteInfo(),
@@ -251,6 +262,7 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     app.setAppUserModelId('com.kirilltan.aurora')
     dirs.root()
+    void applyProxy()
     createWindow()
     const selftest = process.env['AURORA_SELFTEST']
     if (selftest && win) {
@@ -262,6 +274,17 @@ if (!app.requestSingleInstanceLock()) {
     java.detectJavas().catch(() => undefined)
   })
 }
+
+app.on('will-quit', () => shutdownOverlay())
+
+// логин/пароль для своего прокси
+app.on('login', (event, _wc, _details, authInfo, callback) => {
+  const p = getSettings().proxy
+  if (authInfo.isProxy && p?.enabled && p.user) {
+    event.preventDefault()
+    callback(p.user, p.pass || '')
+  }
+})
 
 app.on('window-all-closed', () => {
   if (runningIds().length === 0) app.quit()

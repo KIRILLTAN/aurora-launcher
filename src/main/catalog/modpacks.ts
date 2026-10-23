@@ -194,21 +194,27 @@ export function installPackFromUrl(url: string, name?: string): Promise<Instance
 
 const TYPE_DIR: Record<string, string> = { mod: 'mods', resourcepack: 'resourcepacks', shader: 'shaderpacks' }
 
-export function installModrinthProject(instanceId: string, projectId: string, type: 'mod' | 'resourcepack' | 'shader', versionId?: string): Promise<string[]> {
+export function installModrinthProject(
+  instanceId: string,
+  projectId: string,
+  type: 'mod' | 'resourcepack' | 'shader',
+  versionId?: string,
+  loaderOverride?: string
+): Promise<string[]> {
   const inst = getInstance(instanceId)
-  return withTask('Установка из Modrinth', async (t) => {
+  return withCancellableTask('Установка из Modrinth', async (t) => {
     const installed: string[] = []
     const seen = new Set<string>()
     const install = async (pid: string, vid?: string): Promise<void> => {
       if (seen.has(pid)) return
       seen.add(pid)
-      const loader = type === 'mod' ? inst.loader : undefined
+      const loader = type === 'mod' ? loaderOverride || inst.loader : undefined
       const v = vid ? await getModrinthVersion(vid) : (await modrinthVersions(pid, inst.mcVersion, loader))[0]
       if (!v) throw new Error(`Нет версии под Minecraft ${inst.mcVersion}${loader ? ' / ' + loader : ''}`)
       const f = v.files.find((x) => x.primary) || v.files[0]
       const dst = safeJoin(gameDir(instanceId), path.join(TYPE_DIR[type], f.filename))
       t.detail(f.filename)
-      await downloadFile({ url: f.url, path: dst, sha1: f.hashes.sha1 })
+      await downloadFile({ url: f.url, path: dst, sha1: f.hashes.sha1 }, undefined, 3, t.signal)
       installed.push(f.filename)
       if (type === 'mod') {
         for (const d of v.dependencies.filter((d) => d.dependency_type === 'required' && d.project_id)) {
@@ -223,7 +229,7 @@ export function installModrinthProject(instanceId: string, projectId: string, ty
 
 export function installCurseforgeProject(instanceId: string, projectId: string, type: 'mod' | 'resourcepack' | 'shader', fileId?: string): Promise<string[]> {
   const inst = getInstance(instanceId)
-  return withTask('Установка из CurseForge', async (t) => {
+  return withCancellableTask('Установка из CurseForge', async (t) => {
     let f: CfFile
     if (fileId) f = (await cfGet<{ data: CfFile }>(`/mods/${projectId}/files/${fileId}`)).data
     else {
@@ -235,7 +241,7 @@ export function installCurseforgeProject(instanceId: string, projectId: string, 
       f = list[0]
     }
     t.detail(f.fileName)
-    await downloadFile({ url: cfDownloadUrl(f), path: safeJoin(gameDir(instanceId), path.join(TYPE_DIR[type], f.fileName)), sha1: cfSha1(f) })
+    await downloadFile({ url: cfDownloadUrl(f), path: safeJoin(gameDir(instanceId), path.join(TYPE_DIR[type], f.fileName)), sha1: cfSha1(f) }, undefined, 3, t.signal)
     return [f.fileName]
   })
 }
