@@ -6,3 +6,7 @@ dist/
 Thumbs.db
 .vscode/
 .idea/
+
+helper-mod/build/
+helper-mod/.gradle/
+resources/helper/
