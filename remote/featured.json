@@ -1,0 +1,28 @@
+{
+  "packs": [
+    {
+      "title": "Fabulously Optimized",
+      "description": "Ванилла, но быстрее: Sodium, Iris и десятки оптимизаций",
+      "ref": "modrinth:fabulously-optimized",
+      "tag": "FPS"
+    },
+    {
+      "title": "Cobblemon Official",
+      "description": "Покемоны в Minecraft — официальный модпак Cobblemon",
+      "ref": "modrinth:cobblemon-fabric",
+      "tag": "приключения"
+    },
+    {
+      "title": "Better MC [Fabric]",
+      "description": "Сотни модов: новые биомы, данжи, мобы и боссы",
+      "ref": "modrinth:better-mc-fabric-bmc2",
+      "tag": "большой"
+    },
+    {
+      "title": "Additive",
+      "description": "Улучшенная ванилла с новым контентом",
+      "ref": "modrinth:additive",
+      "tag": "ванилла+"
+    }
+  ]
+}

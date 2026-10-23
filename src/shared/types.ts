@@ -1,0 +1,194 @@
+export type LoaderType = 'vanilla' | 'fabric' | 'quilt' | 'forge' | 'neoforge'
+
+export interface Instance {
+  id: string
+  name: string
+  mcVersion: string
+  loader: LoaderType
+  loaderVersion?: string
+  /** id установленной версии (например fabric-loader-0.16.5-1.21.1) */
+  versionId?: string
+  icon?: string
+  group?: string
+  createdAt: number
+  lastPlayed?: number
+  playTime?: number
+  memoryMax?: number
+  memoryMin?: number
+  /** пусто = автоматический выбор Java */
+  javaPath?: string
+  jvmArgs?: string
+  gameArgs?: string
+  width?: number
+  height?: number
+  fullscreen?: boolean
+  source?: { type: 'modrinth' | 'curseforge' | 'file' | 'github'; projectId?: string; versionId?: string; name?: string }
+}
+
+export type AccountType = 'microsoft' | 'offline' | 'elyby' | 'yggdrasil'
+
+export interface Account {
+  id: string
+  type: AccountType
+  name: string
+  uuid: string
+  skinUrl?: string
+  capeUrl?: string
+  /** адрес сервера для authlib-injector (Ely.by / LittleSkin / свой) */
+  server?: string
+  serverName?: string
+  addedAt: number
+}
+
+export interface Settings {
+  dataDir: string
+  memoryMin: number
+  memoryMax: number
+  jvmArgs: string
+  width: number
+  height: number
+  afterLaunch: 'keep' | 'hide' | 'close'
+  concurrency: number
+  showSnapshots: boolean
+  curseforgeKey: string
+  anthropicKey: string
+  aiEnabled: boolean
+  accent: 'aurora' | 'emerald' | 'violet' | 'sunset' | 'ice'
+  selectedAccount?: string
+  selectedInstance?: string
+  autoUpdate: boolean
+  autoJava: boolean
+  msClientId: string
+  githubRepo: string
+}
+
+export interface Task {
+  id: string
+  title: string
+  detail?: string
+  progress: number
+  status: 'running' | 'done' | 'error'
+  error?: string
+}
+
+export interface JavaInstall {
+  path: string
+  version: string
+  major: number
+  arch: string
+  vendor?: string
+  source: 'detected' | 'manual' | 'aurora'
+}
+
+export interface JavaRelease {
+  major: number
+  lts: boolean
+  hint: string
+  recommendedFor: string
+}
+
+export interface McVersion {
+  id: string
+  type: 'release' | 'snapshot' | 'old_beta' | 'old_alpha'
+  releaseTime: string
+}
+
+export interface LoaderVersion {
+  version: string
+  stable: boolean
+}
+
+export interface CrashCause {
+  severity: 'high' | 'medium' | 'low'
+  title: string
+  detail: string
+  mods?: string[]
+  fix?: string
+}
+
+export interface CrashAnalysis {
+  instanceId: string
+  exitCode: number | null
+  title: string
+  summary: string
+  causes: CrashCause[]
+  suspectedMods: string[]
+  crashReport?: string
+  logTail: string
+  aiAvailable: boolean
+}
+
+export interface ModInfo {
+  file: string
+  enabled: boolean
+  id?: string
+  name: string
+  version?: string
+  description?: string
+  loaders: string[]
+  size: number
+}
+
+export interface CatalogItem {
+  source: 'modrinth' | 'curseforge'
+  id: string
+  slug?: string
+  title: string
+  description: string
+  author?: string
+  icon?: string
+  downloads: number
+  follows?: number
+  categories: string[]
+  versions?: string[]
+  url?: string
+}
+
+export interface CatalogVersion {
+  id: string
+  name: string
+  versionNumber: string
+  gameVersions: string[]
+  loaders: string[]
+  date: string
+  downloads?: number
+  fileName?: string
+}
+
+export interface NewsItem {
+  title: string
+  date: string
+  body: string
+  image?: string
+  url?: string
+  tag?: string
+}
+
+export interface FeaturedPack {
+  title: string
+  description: string
+  image?: string
+  /** modrinth:<projectId> | curseforge:<projectId> | url:<https://...mrpack> */
+  ref: string
+  tag?: string
+}
+
+export interface RemoteInfo {
+  news: NewsItem[]
+  featured: FeaturedPack[]
+  motd?: string
+  latestVersion?: string
+}
+
+export interface UpdateStatus {
+  state: 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'none' | 'error' | 'dev'
+  version?: string
+  progress?: number
+  error?: string
+}
+
+export interface GameLog {
+  instanceId: string
+  line: string
+  level?: 'info' | 'warn' | 'error'
+}

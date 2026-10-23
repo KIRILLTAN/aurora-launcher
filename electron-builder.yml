@@ -1,0 +1,45 @@
+appId: com.kirilltan.aurora
+productName: Aurora Launcher
+copyright: Copyright © 2026 KIRILLTAN
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  icon: build/icon.png
+  artifactName: Aurora-Launcher-${version}-${arch}.${ext}
+portable:
+  artifactName: Aurora-Launcher-${version}-portable.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: Aurora Launcher
+  artifactName: Aurora-Launcher-Setup-${version}.${ext}
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+mac:
+  target: [dmg, zip]
+  icon: build/icon.png
+  category: public.app-category.games
+  artifactName: Aurora-Launcher-${version}-mac-${arch}.${ext}
+linux:
+  target: [AppImage]
+  icon: build/icon.png
+  category: Game
+  maintainer: KIRILLTAN
+  artifactName: Aurora-Launcher-${version}-linux-${arch}.${ext}
+publish:
+  provider: github
+  owner: KIRILLTAN
+  repo: aurora-launcher
+  releaseType: release

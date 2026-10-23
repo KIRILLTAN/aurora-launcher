@@ -1,0 +1,19 @@
+{
+  "motd": "Добро пожаловать в Aurora Launcher ✨",
+  "items": [
+    {
+      "title": "Вышел Aurora Launcher 1.0",
+      "date": "23.10.2026",
+      "tag": "релиз",
+      "body": "Первая версия лаунчера:\n- сборки с **Fabric, Quilt, Forge и NeoForge**\n- модпаки с **Modrinth** и **CurseForge**\n- аккаунты Microsoft, Ely.by, authlib-injector и оффлайн\n- встроенный менеджер Java и редактор скинов\n- ИИ-разбор крашей: какие моды конфликтуют и как это исправить",
+      "url": "https://github.com/KIRILLTAN/aurora-launcher/releases"
+    },
+    {
+      "title": "Как добавить свою новость",
+      "date": "23.10.2026",
+      "tag": "гайд",
+      "body": "Новости берутся из файла `remote/news.json` в репозитории GitHub. Отредактируйте его прямо на сайте — лаунчер покажет изменения при следующем открытии.",
+      "url": "https://github.com/KIRILLTAN/aurora-launcher/blob/main/remote/news.json"
+    }
+  ]
+}
