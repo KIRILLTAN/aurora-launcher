@@ -312,6 +312,9 @@ export interface OverlayConfig {
   borderless: boolean
   /** автоподмена: новый стак в руку, тотем в левую руку, запасная броня */
   autoRefill: boolean
+  /** аварийный тотем: при здоровье ≤ totemHp тотем из инвентаря ставится в левую руку */
+  emergencyTotem: boolean
+  totemHp: number
 }
 
 export interface ProxyConfig {

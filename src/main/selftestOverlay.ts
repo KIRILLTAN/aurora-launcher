@@ -123,7 +123,7 @@ async function connectTest(name: string, loader: LoaderType, mc: string, acc: Ac
 export async function overlaySelfTest(acc: Account, outDir: string, log: Log, windowsOnly = false): Promise<void> {
   updateSettings({
     helperEnabled: true,
-    overlay: { loot: true, worldIcons: true, radius: 32, arrows: true, coords: true, fps: true, clock: true, armor: true, offhand: true, rightSide: false, maxLines: 8, borderless: true, autoRefill: false }
+    overlay: { loot: true, worldIcons: true, radius: 32, arrows: true, coords: true, fps: true, clock: true, armor: true, offhand: true, rightSide: false, maxLines: 8, borderless: true, autoRefill: false, emergencyTotem: false, totemHp: 6 }
   })
 
   if (!windowsOnly) {

@@ -33,7 +33,9 @@ export const DEFAULT_OVERLAY: OverlayConfig = {
   rightSide: false,
   maxLines: 8,
   borderless: true,
-  autoRefill: false
+  autoRefill: false,
+  emergencyTotem: false,
+  totemHp: 6
 }
 
 interface Session {
@@ -304,6 +306,8 @@ const MENU: { key: MenuKey; label: string; values?: number[] }[] = [
   { key: 'armor', label: 'HUD брони (справа)' },
   { key: 'offhand', label: 'Предметы в руках и прочность (слева)' },
   { key: 'autoRefill', label: 'Автоподмена предметов' },
+  { key: 'emergencyTotem', label: 'Аварийный тотем (мало здоровья)' },
+  { key: 'totemHp', label: 'Порог здоровья для тотема, HP', values: [4, 6, 8, 10, 12] },
   { key: 'coords', label: 'Координаты' },
   { key: 'fps', label: 'FPS' },
   { key: 'clock', label: 'Часы' },
@@ -315,7 +319,7 @@ const MENU: { key: MenuKey; label: string; values?: number[] }[] = [
 /** Настройки, которые нужны самому агенту в игре (полный экран, автоподмена) — меняются на лету. */
 function sendAgentConfig(s: Session): void {
   const cfg = overlayConfig()
-  if (s.socket && !s.socket.destroyed) s.socket.write(JSON.stringify({ borderless: cfg.borderless, refill: cfg.autoRefill }) + '\n')
+  if (s.socket && !s.socket.destroyed) s.socket.write(JSON.stringify({ borderless: cfg.borderless, refill: cfg.autoRefill, totem: cfg.emergencyTotem, totemHp: cfg.totemHp }) + '\n')
 }
 
 /** Настройки помощника изменились в лаунчере — обновляем оверлей и агента. */

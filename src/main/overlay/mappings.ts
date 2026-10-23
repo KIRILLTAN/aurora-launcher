@@ -106,6 +106,8 @@ const NEEDS: Need[] = [
   { cls: C.PLAYER, name: 'getInventory', argc: 0 },
   { cls: C.PLAYER, name: 'inventory', field: true },
   { cls: C.PLAYER, name: 'inventoryMenu', field: true },
+  { cls: C.PLAYER, name: 'containerMenu', field: true },
+  { cls: C.LIVING, name: 'getHealth', argc: 0 },
   { cls: C.INVENTORY, name: 'selected', field: true },
   { cls: C.INVENTORY, name: 'getSelectedSlot', argc: 0 },
   { cls: C.INVENTORY, name: 'getItem', argc: 1 },
@@ -252,7 +254,7 @@ function findLibrary(prefix: string[], fileRe: RegExp): string | null {
 export async function buildOverlayMappings(inst: Instance, v: ResolvedVersion): Promise<{ file: string; ns: Namespace } | null> {
   const ns = overlayNamespace(inst, v)
   if (!ns) return null
-  const out = path.join(ensureDir(path.join(dirs.cache(), 'overlay')), `${v.id}-${ns}-v4.tsv`)
+  const out = path.join(ensureDir(path.join(dirs.cache(), 'overlay')), `${v.id}-${ns}-v5.tsv`)
   if (exists(out)) return { file: out, ns }
 
   const lines: string[] = []

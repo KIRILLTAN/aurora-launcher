@@ -46,6 +46,9 @@ public final class Agent {
     /** настройки от лаунчера (меняются на лету) */
     static volatile boolean borderlessOn;
     static volatile boolean refillOn;
+    /** аварийный тотем: при здоровье не выше порога тотем из инвентаря ставится в левую руку */
+    static volatile boolean totemOn;
+    static volatile double totemHp = 6;
 
     public static void premain(String args, Instrumentation instrumentation) {
         inst = instrumentation;
@@ -373,6 +376,9 @@ public final class Agent {
                 for (String line; (line = r.readLine()) != null; ) {
                     if (line.contains("\"borderless\":")) borderlessOn = line.contains("\"borderless\":true") && !mac;
                     if (line.contains("\"refill\":")) refillOn = line.contains("\"refill\":true");
+                    if (line.contains("\"totem\":")) totemOn = line.contains("\"totem\":true");
+                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"totemHp\":([0-9.]+)").matcher(line);
+                    if (m.find()) totemHp = Double.parseDouble(m.group(1));
                 }
             } catch (Throwable ignored) {
                 // лаунчер закрыл соединение
@@ -492,7 +498,7 @@ public final class Agent {
         stack(sb, call(player, LIVING, "getOffhandItem"));
 
         // автоподмена предметов — тоже на потоке игры, ~30 раз в секунду
-        if (refillOn && snapCount % 2 == 0) {
+        if ((refillOn || totemOn) && snapCount % 2 == 0) {
             try {
                 Refill.tick(mc, player, screen != null);
             } catch (Throwable e) {
@@ -663,6 +669,17 @@ public final class Agent {
             return c >= 0 ? s.substring(c + 1) : s;
         }
 
+        private static boolean isTotem(Object item) {
+            return item != null && name(item).contains("totem");
+        }
+
+        /** Тотем в инвентаре: сначала рюкзак, потом хотбар. */
+        private static int findTotem(Object inv) {
+            for (int i = 9; i < 36; i++) if (isTotem(itemOf(call(inv, INVENTORY, "getItem", i)))) return i;
+            for (int i = 0; i < 9; i++) if (isTotem(itemOf(call(inv, INVENTORY, "getItem", i)))) return i;
+            return -1;
+        }
+
         static void tick(Object mc, Object player, boolean screenOpen) {
             Object inv = inventory(player);
             if (inv == null) return;
@@ -674,9 +691,35 @@ public final class Agent {
                 Object sl = slot(ARMOR_SLOTS[i]);
                 armor[i] = sl == null ? null : itemOf(call(player, LIVING, "getItemBySlot", sl));
             }
-            // в открытом инвентаре игрок перекладывает вещи сам — не мешаем
-            if (!screenOpen && System.currentTimeMillis() >= cooldownUntil) {
-                boolean acted = false;
+            // кликать по своему инвентарю можно, когда ничего не открыто или открыт сам инвентарь (E);
+            // в сундуке и других контейнерах сервер такие клики отклонит
+            Object open = get(player, PLAYER, "containerMenu");
+            boolean ownInventory = !screenOpen || (open != null && open == get(player, PLAYER, "inventoryMenu"));
+            long now = System.currentTimeMillis();
+            boolean acted = false;
+            if (ownInventory && now >= cooldownUntil) {
+                // аварийный тотем: мало здоровья, а тотема в руках нет — ставим в левую руку (что там было — уходит на место тотема)
+                if (totemOn && !isTotem(off) && !isTotem(main)) {
+                    double hp = num(call(player, LIVING, "getHealth"));
+                    if (hp > 0 && hp <= totemHp) {
+                        int from = findTotem(inv);
+                        if (from >= 0 && click(mc, player, menuSlot(from), 40, "SWAP")) {
+                            last = "аварийный тотем (" + (int) Math.ceil(hp) + " HP)";
+                            acted = true;
+                        }
+                    }
+                }
+                // сработал тотем — новый в левую руку, даже в открытом инвентаре
+                if (!acted && refillOn && isTotem(lastOff) && off == null) {
+                    int from = findTotem(inv);
+                    if (from >= 0 && click(mc, player, menuSlot(from), 40, "SWAP")) {
+                        last = "в левую руку: " + name(lastOff);
+                        acted = true;
+                    }
+                }
+            }
+            // остальное — только когда инвентарь закрыт: в нём игрок перекладывает вещи сам
+            if (!acted && refillOn && !screenOpen && now >= cooldownUntil) {
                 if (sel >= 0 && sel == lastSel && lastMain != null && main == null) {
                     int from = find(inv, lastMain, sel);
                     if (from >= 0 && click(mc, player, menuSlot(from), sel, "SWAP")) {
@@ -699,8 +742,8 @@ public final class Agent {
                         acted = true;
                     }
                 }
-                if (acted) cooldownUntil = System.currentTimeMillis() + 150;
             }
+            if (acted) cooldownUntil = now + 150;
             lastSel = sel;
             lastMain = main;
             lastOff = off;
