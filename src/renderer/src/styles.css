@@ -354,3 +354,5 @@ input[type='range']::-webkit-slider-thumb { -webkit-appearance: none; width: 18p
 .page-header > div:first-child { min-width: 0; }
 .page-header h1 { white-space: nowrap; }
 .page-header .actions { flex-wrap: wrap; justify-content: flex-end; }
+.btn.sm.icon { padding: 0; }
+.btn svg { flex: none; }
