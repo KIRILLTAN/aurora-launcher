@@ -1,10 +1,11 @@
 import fs from 'fs'
 import path from 'path'
 import AdmZip from 'adm-zip'
+import { extractZip, readZipText, zipEntryNames } from '../util/zip'
 import type { Instance, LoaderType } from '@shared/types'
 import { dirs, getSettings } from '../settings'
 import { downloadAll, downloadFile, type DownloadItem } from '../util/net'
-import { safeJoin, ensureDir } from '../util/store'
+import { safeJoin } from '../util/store'
 import { withTask, withCancellableTask, type TaskHandle } from "../events"
 import { createInstance, gameDir, deleteInstance, getInstance } from '../instances'
 import { ensureInstalled } from '../minecraft/launch'
@@ -26,14 +27,14 @@ interface CfManifest {
   overrides?: string
 }
 
-function extractDir(zip: AdmZip, prefix: string, target: string): void {
-  for (const e of zip.getEntries()) {
-    if (!e.entryName.startsWith(prefix + '/') || e.isDirectory) continue
-    const rel = e.entryName.slice(prefix.length + 1)
-    if (!rel) continue
-    const dst = safeJoin(target, rel)
-    ensureDir(path.dirname(dst))
-    fs.writeFileSync(dst, e.getData())
+/** Распаковывает папки overrides из архива сборки (по порядку: последующие перекрывают). */
+async function extractDirs(file: string, prefixes: string[], target: string, signal?: AbortSignal): Promise<void> {
+  for (const prefix of prefixes) {
+    await extractZip(file, (name) => {
+      if (!name.startsWith(prefix + '/')) return null
+      const rel = name.slice(prefix.length + 1)
+      return rel ? safeJoin(target, rel) : null
+    }, signal)
   }
 }
 
@@ -46,8 +47,8 @@ function loaderFromMr(deps: Record<string, string>): { loader: LoaderType; versi
 }
 
 async function installMrpack(file: string, task: TaskHandle, meta: Partial<Instance> = {}): Promise<Instance> {
-  const zip = new AdmZip(file)
-  const idx = JSON.parse(zip.readAsText('modrinth.index.json')) as MrIndex
+  const idx = JSON.parse((await readZipText(file, 'modrinth.index.json')) || '{}') as MrIndex
+  if (!idx.dependencies) throw new Error('Повреждённый .mrpack: нет modrinth.index.json')
   const { loader, version } = loaderFromMr(idx.dependencies)
   const inst = createInstance({
     name: meta.name || idx.name,
@@ -67,8 +68,8 @@ async function installMrpack(file: string, task: TaskHandle, meta: Partial<Insta
       signal: task.signal,
       onProgress: (d, t) => task.update(0.05 + 0.4 * (t ? d / t : 1), `Моды и ресурсы: ${d}/${t}`)
     })
-    extractDir(zip, 'overrides', gdir)
-    extractDir(zip, 'client-overrides', gdir)
+    task.detail('Распаковка конфигов и файлов сборки')
+    await extractDirs(file, ['overrides', 'client-overrides'], gdir, task.signal)
     task.detail('Установка Minecraft и загрузчика')
     await ensureInstalled(getInstance(inst.id), task)
     return getInstance(inst.id)
@@ -79,8 +80,8 @@ async function installMrpack(file: string, task: TaskHandle, meta: Partial<Insta
 }
 
 async function installCfZip(file: string, task: TaskHandle, meta: Partial<Instance> = {}): Promise<Instance> {
-  const zip = new AdmZip(file)
-  const man = JSON.parse(zip.readAsText('manifest.json')) as CfManifest
+  const man = JSON.parse((await readZipText(file, 'manifest.json')) || '{}') as CfManifest
+  if (!man.minecraft) throw new Error('Повреждённый архив CurseForge: нет manifest.json')
   const primary = man.minecraft.modLoaders.find((l) => l.primary) || man.minecraft.modLoaders[0]
   let loader: LoaderType = 'vanilla'
   let loaderVersion: string | undefined
@@ -117,7 +118,8 @@ async function installCfZip(file: string, task: TaskHandle, meta: Partial<Instan
       signal: task.signal,
       onProgress: (d, t) => task.update(0.05 + 0.4 * (t ? d / t : 1), `Моды: ${d}/${t}`)
     })
-    extractDir(zip, man.overrides || 'overrides', gdir)
+    task.detail('Распаковка конфигов и файлов сборки')
+    await extractDirs(file, [man.overrides || 'overrides'], gdir, task.signal)
     task.detail('Установка Minecraft и загрузчика')
     await ensureInstalled(getInstance(inst.id), task)
     return getInstance(inst.id)
@@ -129,10 +131,10 @@ async function installCfZip(file: string, task: TaskHandle, meta: Partial<Instan
 
 /** Импорт сборки из файла: .mrpack (Modrinth) или .zip (CurseForge / архив Aurora/Prism). */
 export function importPackFile(file: string): Promise<Instance> {
-  return withCancellableTask(`Импорт ${path.basename(file)}`, (t) => {
-    const zip = new AdmZip(file)
-    if (zip.getEntry('modrinth.index.json')) return installMrpack(file, t)
-    if (zip.getEntry('manifest.json')) return installCfZip(file, t)
+  return withCancellableTask(`Импорт ${path.basename(file)}`, async (t) => {
+    const names = new Set(await zipEntryNames(file))
+    if (names.has('modrinth.index.json')) return installMrpack(file, t)
+    if (names.has('manifest.json')) return installCfZip(file, t)
     throw new Error('Неизвестный формат: нужен .mrpack (Modrinth) или .zip с manifest.json (CurseForge)')
   })
 }
@@ -182,9 +184,8 @@ export function installPackFromUrl(url: string, name?: string): Promise<Instance
     const file = path.join(dirs.cache(), 'packs', fname)
     let got = 0
     await downloadFile({ url, path: file }, (n) => { got += n; t.update(0.02, `Скачано ${(got / 1048576).toFixed(1)} МБ`) }, 3, t.signal)
-    const zip = new AdmZip(file)
     const meta: Partial<Instance> = { name, source: { type: 'github', name } }
-    const inst = zip.getEntry('modrinth.index.json') ? await installMrpack(file, t, meta) : await installCfZip(file, t, meta)
+    const inst = (await zipEntryNames(file)).includes('modrinth.index.json') ? await installMrpack(file, t, meta) : await installCfZip(file, t, meta)
     fs.rmSync(file, { force: true })
     return inst
   })

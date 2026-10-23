@@ -136,12 +136,16 @@ function flushLogs(): void {
   flushTimer = null
   if (!pending.length) return
   const logs = { ...useLogs.getState().logs }
+  const touched = new Set<string>()
   for (const l of pending.splice(0)) {
-    const arr = logs[l.instanceId] ? logs[l.instanceId].slice() : []
-    arr.push(l)
-    logs[l.instanceId] = arr
+    // копируем массив сборки один раз за пачку, а не на каждую строку
+    if (!touched.has(l.instanceId)) {
+      logs[l.instanceId] = logs[l.instanceId] ? logs[l.instanceId].slice() : []
+      touched.add(l.instanceId)
+    }
+    logs[l.instanceId].push(l)
   }
-  for (const k of Object.keys(logs)) if (logs[k].length > 3000) logs[k] = logs[k].slice(-3000)
+  for (const k of touched) if (logs[k].length > 3000) logs[k] = logs[k].slice(-3000)
   useLogs.setState({ logs })
 }
 
@@ -164,8 +168,10 @@ export function bindEvents(): () => void {
         setTimeout(() => useTasks.setState({ tasks: useTasks.getState().tasks.filter((x) => x.id !== t.id) }), t.status === 'done' ? 4000 : 2500)
       }
     }),
-    api.on<GameLog>('game:log', (l) => {
-      pending.push(l)
+    api.on<GameLog | GameLog[]>('game:log', (l) => {
+      if (Array.isArray(l)) for (const x of l) pending.push(x)
+      else pending.push(l)
+      if (pending.length > 3000) pending.splice(0, pending.length - 3000)
       if (!flushTimer) flushTimer = setTimeout(flushLogs, 200)
     }),
     api.on<{ instanceId: string; running: boolean }>('game:state', () => api.running().then(setRunning)),

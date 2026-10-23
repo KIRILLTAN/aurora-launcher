@@ -2,13 +2,13 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 import { execFile } from 'child_process'
-import AdmZip from 'adm-zip'
+import { extractZip } from '../util/zip'
 import * as tar from 'tar'
 import type { JavaInstall, JavaRelease } from '@shared/types'
 import { app } from 'electron'
 import { dirs } from '../settings'
 import { fetchJson, downloadFile } from '../util/net'
-import { readJson, writeJson, exists, ensureDir } from '../util/store'
+import { readJson, writeJson, exists, ensureDir, safeJoin } from '../util/store'
 import type { TaskHandle } from '../events'
 import { compareMc } from '../minecraft/versions'
 
@@ -263,7 +263,7 @@ export async function installJava(major: number, task?: TaskHandle, imageType: '
   const dest = ensureDir(path.join(dirs.java(), `${asset.binary.image_type}-${major}-${asset.release_name}`))
   task?.update(0.85, 'Распаковка')
   if (pkg.name.endsWith('.zip')) {
-    await new Promise<void>((res, rej) => new AdmZip(archive).extractAllToAsync(dest, true, false, (e) => (e ? rej(e) : res())))
+    await extractZip(archive, (n) => safeJoin(dest, n), task?.signal)
   } else {
     await tar.x({ file: archive, cwd: dest })
   }

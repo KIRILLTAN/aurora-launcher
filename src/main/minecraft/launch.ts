@@ -3,7 +3,7 @@ import os from 'os'
 import path from 'path'
 import { spawn, type ChildProcess } from 'child_process'
 import { app } from 'electron'
-import type { Instance, JavaInstall } from '@shared/types'
+import type { GameLog, Instance, JavaInstall } from '@shared/types'
 import { dirs, getSettings } from '../settings'
 import { emit, TaskHandle } from '../events'
 import { gameDir, getInstance, saveInstance } from '../instances'
@@ -269,12 +269,23 @@ export async function launchInstance(id: string, accountId: string | undefined, 
     running.set(id, r)
     emit('game:state', { instanceId: id, running: true })
 
+    // строки уходят в окно пачками раз в 150 мс: моды при загрузке пишут десятки тысяч строк
+    let outbox: GameLog[] = []
+    let flushTimer: NodeJS.Timeout | null = null
+    const flush = (): void => {
+      flushTimer = null
+      if (!outbox.length) return
+      emit('game:log', outbox)
+      outbox = []
+    }
     const push = (line: string, level?: 'info' | 'warn' | 'error'): void => {
       const clean = line.split(auth.accessToken).join(auth.accessToken === '0' ? '0' : '••••••')
       r.log.push(clean)
-      if (r.log.length > 5000) r.log.splice(0, r.log.length - 5000)
+      if (r.log.length > 6000) r.log.splice(0, r.log.length - 5000)
       out.write(clean + '\n')
-      emit('game:log', { instanceId: id, line: clean, level })
+      outbox.push({ instanceId: id, line: clean, level })
+      if (outbox.length > 2000) outbox.splice(0, outbox.length - 2000)
+      if (!flushTimer) flushTimer = setTimeout(flush, 150)
     }
     const parse = createLogParser(push)
     if (overlay.reason) push(`[Aurora] Помощник F6 не запущен: ${overlay.reason}`, 'warn')
@@ -285,7 +296,9 @@ export async function launchInstance(id: string, accountId: string | undefined, 
     proc.on('error', (e) => push(`[Aurora] Не удалось запустить Java: ${e.message}`, 'error'))
 
     task.done('Игра запущена')
-    proc.on('close', (code) => {
+    proc.on('close', async (code) => {
+      if (flushTimer) clearTimeout(flushTimer)
+      flush()
       out.end()
       running.delete(id)
       lastLogs.set(id, r.log)
@@ -294,7 +307,7 @@ export async function launchInstance(id: string, accountId: string | undefined, 
       cur.playTime = (cur.playTime || 0) + Math.round((Date.now() - r.startedAt) / 1000)
       saveInstance(cur)
       const crashed = !r.stoppedByUser && code !== 0 && code !== null && code !== 130 && code !== 143
-      const analysis = crashed ? analyzeCrash(cur, code, r.log, r.startedAt) : null
+      const analysis = crashed ? await analyzeCrash(cur, code, r.log, r.startedAt).catch(() => null) : null
       if (running.size === 0 || crashed) {
         const main = mainWindow()
         if (main) {

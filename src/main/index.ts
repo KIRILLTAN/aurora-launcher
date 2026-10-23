@@ -146,7 +146,7 @@ const handlers: Record<string, Handler> = {
   'mods:delete': (id: string, file: string) => mods.deleteMod(id, file),
   'mods:addFiles': (id: string, files: string[]) => {
     const dir = mods.modsDir(id)
-    for (const f of files) if (/\.jar$/i.test(f)) fs.copyFileSync(f, path.join(dir, path.basename(f)))
+    return Promise.all(files.filter((f) => /\.jar$/i.test(f)).map((f) => fs.promises.copyFile(f, path.join(dir, path.basename(f)))))
   },
 
   // каталог

@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { spawn } from 'child_process'
 import AdmZip from 'adm-zip'
+import { readZipText } from '../util/zip'
 import { CancelledError } from "../util/cancel"
 import type { LoaderType, LoaderVersion } from '@shared/types'
 import { dirs, getSettings } from '../settings'
@@ -202,7 +203,7 @@ async function installForgeLike(installer: string, mc: string, javaPath: () => P
     const p = procs[i]
     task?.update(0.7 + 0.28 * (i / procs.length), `Патчинг Minecraft (${i + 1}/${procs.length})`)
     const jar = libraryPath(mavenPath(p.jar))
-    const mainClass = readMainClass(jar)
+    const mainClass = await readMainClass(jar)
     if (!mainClass) throw new Error(`Не найден Main-Class в ${p.jar}`)
     const cp = [jar, ...p.classpath.map((c) => libraryPath(mavenPath(c)))].join(path.delimiter)
     const args = p.args.map(resolveArg)
@@ -213,9 +214,9 @@ async function installForgeLike(installer: string, mc: string, javaPath: () => P
   return version.id
 }
 
-function readMainClass(jar: string): string | null {
+async function readMainClass(jar: string): Promise<string | null> {
   try {
-    const mf = new AdmZip(jar).readAsText('META-INF/MANIFEST.MF')
+    const mf = (await readZipText(jar, 'META-INF/MANIFEST.MF')) || ''
     return /^Main-Class:\s*(\S+)/m.exec(mf)?.[1] || null
   } catch {
     return null

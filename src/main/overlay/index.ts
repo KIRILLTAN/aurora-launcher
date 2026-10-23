@@ -2,7 +2,7 @@ import fs from 'fs'
 import net from 'net'
 import path from 'path'
 import crypto from 'crypto'
-import AdmZip from 'adm-zip'
+import { readZipFiles, walkZip } from '../util/zip'
 import { app, BrowserWindow, globalShortcut, screen } from 'electron'
 import type { Instance, OverlayConfig } from '@shared/types'
 import { dirs, getSettings, updateSettings } from '../settings'
@@ -278,54 +278,64 @@ export function overlayToggle(key: keyof OverlayConfig): void {
 
 // ---------------- Иконки предметов ----------------
 
-const zipCache = new Map<string, AdmZip | null>()
-const iconCache = new Map<string, string>()
+const iconCache = new Map<string, Promise<string>>()
+/** Индекс текстур: путь внутри jar → jar. Строится один раз за сессию только по оглавлениям. */
+const textureIndex = new WeakMap<Session, Promise<Map<string, string>>>()
 
-function zipOf(file: string): AdmZip | null {
-  if (!zipCache.has(file)) {
-    try {
-      zipCache.set(file, new AdmZip(file))
-    } catch {
-      zipCache.set(file, null)
-    }
+function texturesOf(session: Session): Promise<Map<string, string>> {
+  let idx = textureIndex.get(session)
+  if (!idx) {
+    idx = (async () => {
+      const map = new Map<string, string>()
+      const jars = [clientJarPath(session.instance.versionId || session.rootId), clientJarPath(session.rootId)]
+      const mods = path.join(gameDir(session.instance.id), 'mods')
+      if (exists(mods)) for (const f of await fs.promises.readdir(mods)) if (f.endsWith('.jar')) jars.push(path.join(mods, f))
+      for (const jar of jars) {
+        if (!exists(jar)) continue
+        await walkZip(jar, (e) => {
+          const n = e.fileName
+          if (n.startsWith('assets/') && n.endsWith('.png') && n.includes('/textures/') && !map.has(n)) map.set(n, jar)
+        }).catch(() => undefined)
+      }
+      return map
+    })()
+    textureIndex.set(session, idx)
   }
-  return zipCache.get(file) || null
+  return idx
 }
 
 /** Текстура предмета по его descriptionId: из jar игры или модов сборки. */
-export function overlayIcon(descriptionId: string): string {
-  if (iconCache.has(descriptionId)) return iconCache.get(descriptionId)!
+export function overlayIcon(descriptionId: string): Promise<string> {
+  const session = [...sessions.values()].find((s) => s.socket)
+  if (!session) return Promise.resolve('')
+  const key = session.instance.id + '|' + descriptionId
+  let p = iconCache.get(key)
+  if (!p) {
+    p = findIcon(session, descriptionId).catch(() => '')
+    iconCache.set(key, p)
+  }
+  return p
+}
+
+async function findIcon(session: Session, descriptionId: string): Promise<string> {
   // форматы: "item.minecraft.diamond", "block.minecraft.stone" или "minecraft:diamond"
   const colon = /^([a-z0-9_.-]+):([a-z0-9_/.-]+)$/.exec(descriptionId)
   const m = colon ? ['', 'item', colon[1], colon[2]] : /^(item|block)\.([^.]+)\.(.+)$/.exec(descriptionId)
-  let result = ''
-  const session = [...sessions.values()].find((s) => s.socket)
-  if (m && session) {
-    const [, kind, ns, rawPath] = m
-    const p = rawPath.replace(/\./g, '/')
-    const names = kind === 'item'
-      ? [`item/${p}`, `block/${p}`, `items/${p}`]
-      : [`block/${p}`, `item/${p}`, `block/${p}_top`, `block/${p}_side`, `block/${p}_front`, `blocks/${p}`, `block/${p.replace(/_(slab|stairs|wall|fence|fence_gate|button|pressure_plate)$/, '')}`, `block/${p.replace(/_(slab|stairs|wall)$/, 's')}`]
-    const jars = [clientJarPath(session.instance.versionId || session.rootId), clientJarPath(session.rootId)]
-    if (ns !== 'minecraft') {
-      const mods = path.join(gameDir(session.instance.id), 'mods')
-      if (exists(mods)) for (const f of fs.readdirSync(mods)) if (f.endsWith('.jar')) jars.push(path.join(mods, f))
-    }
-    outer: for (const jar of jars) {
-      if (!exists(jar)) continue
-      const zip = zipOf(jar)
-      if (!zip) continue
-      for (const n of names) {
-        const e = zip.getEntry(`assets/${ns}/textures/${n}.png`)
-        if (e) {
-          result = 'data:image/png;base64,' + e.getData().toString('base64')
-          break outer
-        }
-      }
-    }
+  if (!m) return ''
+  const [, kind, ns, rawPath] = m
+  const p = rawPath.replace(/\./g, '/')
+  const names = kind === 'item'
+    ? [`item/${p}`, `block/${p}`, `items/${p}`]
+    : [`block/${p}`, `item/${p}`, `block/${p}_top`, `block/${p}_side`, `block/${p}_front`, `blocks/${p}`, `block/${p.replace(/_(slab|stairs|wall|fence|fence_gate|button|pressure_plate)$/, '')}`, `block/${p.replace(/_(slab|stairs|wall)$/, 's')}`]
+  const index = await texturesOf(session)
+  for (const n of names) {
+    const entry = `assets/${ns}/textures/${n}.png`
+    const jar = index.get(entry)
+    if (!jar) continue
+    const buf = (await readZipFiles(jar, [entry])).get(entry)
+    if (buf) return 'data:image/png;base64,' + buf.toString('base64')
   }
-  iconCache.set(descriptionId, result)
-  return result
+  return ''
 }
 
 /** Диагностика для самопроверки. */

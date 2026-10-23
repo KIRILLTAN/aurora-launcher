@@ -12,6 +12,7 @@ import { TaskHandle, cancelTask } from './events'
 import { updateSettings } from './settings'
 import { modrinthVersions } from './catalog/modrinth'
 import { overlaySelfTest } from './selftestOverlay'
+import { listMods, toggleMod } from './mods'
 import { installModrinthProject, installModrinthPack } from './catalog/modpacks'
 
 /**
@@ -115,6 +116,18 @@ export async function runSelfTest(win: BrowserWindow, outDir: string): Promise<v
     const crashInst = createInstance({ name: 'Тест краш', mcVersion: '1.21.1', loader: 'fabric', jvmArgs: '-Djava.awt.headless=true' })
     const vers = await modrinthVersions('sodium', '1.20.1', 'fabric')
     await installModrinthProject(crashInst.id, 'sodium', 'mod', vers[0].id)
+    // чтение модов: первое — по оглавлению jar, повторное — из кеша; переключение без перечитывания
+    {
+      let t0 = Date.now()
+      const first = await listMods(crashInst.id)
+      const tFirst = Date.now() - t0
+      const name = await toggleMod(crashInst.id, first[0].file, false)
+      t0 = Date.now()
+      const again = await listMods(crashInst.id)
+      const tAgain = Date.now() - t0
+      await toggleMod(crashInst.id, name, true)
+      log('mods-list', `${first.map((m) => `${m.name} ${m.version} [${m.loaders.join(',')}]`).join('; ')} | первое=${tFirst}мс кеш=${tAgain}мс выключен=${!again[0].enabled} файл=${name}`)
+    }
     const exited = new Promise<{ analysis?: { title: string; causes: { title: string }[]; suspectedMods: string[] } }>((resolve) => {
       onExit = resolve
       setTimeout(() => resolve({}), 5 * 60_000)

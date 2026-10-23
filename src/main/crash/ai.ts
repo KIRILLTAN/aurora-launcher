@@ -28,7 +28,7 @@ export async function askAi(inst: Instance, analysis: CrashAnalysis, javaInfo: s
 
   let modsList = 'нет'
   try {
-    const mods = listMods(inst.id)
+    const mods = await listMods(inst.id)
     if (mods.length) modsList = mods.map((m) => `- ${m.enabled ? '' : '[ОТКЛЮЧЁН] '}${m.name} ${m.version || ''} (${m.id || '?'}, ${m.file})`).join('\n')
   } catch {
     /* нет папки mods */

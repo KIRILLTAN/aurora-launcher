@@ -109,7 +109,7 @@ export default function InstancePage() {
 }
 
 function ModsTab({ inst }: { inst: Instance }) {
-  const { toast } = useStore()
+  const toast = useStore((s) => s.toast)
   const [mods, setMods] = useState<ModInfo[] | null>(null)
   const [q, setQ] = useState('')
   const [adding, setAdding] = useState(false)
@@ -118,6 +118,27 @@ function ModsTab({ inst }: { inst: Instance }) {
   const [updates, setUpdates] = useState<ModUpdate[] | null>(null)
   const load = (): void => void api.mods(inst.id).then(setMods).catch((e) => toast(e.message, 'error'))
   useEffect(load, [inst.id])
+
+  // переключение и удаление сразу меняют список на экране, без перечитывания всех модов
+  const toggle = (m: ModInfo, enabled: boolean): void => {
+    const base = m.file.replace(/\.disabled$/, '')
+    const same = (x: ModInfo): boolean => x.file.replace(/\.disabled$/, '') === base
+    setMods((list) => list && list.map((x) => (same(x) ? { ...x, enabled } : x)))
+    api.toggleMod(inst.id, m.file, enabled).then(
+      (file) => setMods((list) => list && list.map((x) => (same(x) ? { ...x, file, enabled } : x))),
+      (e) => {
+        toast(e.message, 'error')
+        load()
+      }
+    )
+  }
+  const remove = (m: ModInfo): void => {
+    setMods((list) => list && list.filter((x) => x.file !== m.file))
+    api.deleteMod(inst.id, m.file).catch((e) => {
+      toast(e.message, 'error')
+      load()
+    })
+  }
 
   const filtered = useMemo(() => (mods || []).filter((m) => (m.name + m.file).toLowerCase().includes(q.toLowerCase())), [mods, q])
   const enabledCount = mods?.filter((m) => m.enabled).length || 0
@@ -196,8 +217,8 @@ function ModsTab({ inst }: { inst: Instance }) {
       )}
       <div className="list">
         {filtered.map((m) => (
-          <div key={m.file} className={`list-row ${m.enabled ? '' : 'disabled'}`}>
-            <Switch on={m.enabled} onChange={async (v) => { await api.toggleMod(inst.id, m.file, v); load() }} />
+          <div key={m.file.replace(/\.disabled$/, '')} className={`list-row ${m.enabled ? '' : 'disabled'}`}>
+            <Switch on={m.enabled} onChange={(v) => toggle(m, v)} />
             <div className="grow">
               <div className="row">
                 <b className="ellipsis">{m.name}</b>
@@ -207,7 +228,7 @@ function ModsTab({ inst }: { inst: Instance }) {
               <div className="small muted ellipsis">{m.description || m.file}</div>
             </div>
             <span className="small muted">{(m.size / 1048576).toFixed(1)} МБ</span>
-            <button className="btn ghost sm icon" title="Удалить" onClick={async () => { await api.deleteMod(inst.id, m.file); load() }}>
+            <button className="btn ghost sm icon" title="Удалить" onClick={() => remove(m)}>
               <Trash2 size={14} />
             </button>
           </div>

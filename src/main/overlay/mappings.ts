@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import AdmZip from 'adm-zip'
+import { readZipText } from '../util/zip'
 import type { Instance } from '@shared/types'
 import { dirs } from '../settings'
 import { downloadFile } from '../util/net'
@@ -239,7 +239,7 @@ export async function buildOverlayMappings(inst: Instance, v: ResolvedVersion): 
   if (!cm?.url) return null
   const mojFile = path.join(dirs.versions(), v.rootId, 'client-mappings.txt')
   if (!exists(mojFile)) await downloadFile({ url: cm.url, path: mojFile, sha1: cm.sha1, size: cm.size })
-  const moj = parseProguard(fs.readFileSync(mojFile, 'utf8'))
+  const moj = parseProguard(await fs.promises.readFile(mojFile, 'utf8'))
 
   let table: MemberTable | null = null
   if (ns === 'intermediary') {
@@ -247,11 +247,11 @@ export async function buildOverlayMappings(inst: Instance, v: ResolvedVersion): 
     const alt = findLibrary(['net', 'fabricmc', 'intermediary'], new RegExp(`^intermediary-${inst.mcVersion.replace(/\./g, '\\.')}.*\\.jar$`))
     const file = exists(jar) ? jar : alt
     if (!file) return null
-    table = parseTiny(new AdmZip(file).readAsText('mappings/mappings.tiny'))
+    table = parseTiny((await readZipText(file, 'mappings/mappings.tiny')) || '')
   } else if (ns === 'srg') {
     const zip = findLibrary(['de', 'oceanlabs', 'mcp', 'mcp_config'], new RegExp(`^mcp_config-${inst.mcVersion.replace(/\./g, '\\.')}-.*\\.zip$`))
     if (!zip) return null
-    table = parseTsrg(new AdmZip(zip).readAsText('config/joined.tsrg'))
+    table = parseTsrg((await readZipText(zip, 'config/joined.tsrg')) || '')
   }
 
   for (const need of NEEDS) {

@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import net from 'net'
 import dns from 'dns'
+import crypto from 'crypto'
 import AdmZip from 'adm-zip'
 import { nativeImage } from 'electron'
 import type { ServerStatus, ModUpdate, WorldInfo, ScreenshotInfo } from '@shared/types'
@@ -9,6 +10,7 @@ import { gameDir, getInstance, instanceDir } from './instances'
 import { fetchJson, downloadFile, sha1File } from './util/net'
 import { exists, ensureDir, safeJoin } from './util/store'
 import { withTask, withCancellableTask } from './events'
+import { dirs } from './settings'
 import { modsDir } from './mods'
 import { HELPER_FILE } from './helper'
 import { installModrinthProject } from './catalog/modpacks'
@@ -233,32 +235,33 @@ export function applyModUpdates(instanceId: string, updates: ModUpdate[]): Promi
 
 // ---------------- Миры и скриншоты ----------------
 
-function dirSize(p: string): number {
+async function dirSize(p: string): Promise<number> {
   let total = 0
-  for (const e of fs.readdirSync(p, { withFileTypes: true })) {
+  const list = await fs.promises.readdir(p, { withFileTypes: true }).catch(() => [])
+  for (const e of list) {
     const f = path.join(p, e.name)
-    total += e.isDirectory() ? dirSize(f) : fs.statSync(f).size
+    total += e.isDirectory() ? await dirSize(f) : (await fs.promises.stat(f).catch(() => null))?.size || 0
   }
   return total
 }
 
-export function listWorlds(instanceId: string): WorldInfo[] {
+export async function listWorlds(instanceId: string): Promise<WorldInfo[]> {
   const saves = path.join(gameDir(instanceId), 'saves')
   if (!exists(saves)) return []
-  return fs
-    .readdirSync(saves, { withFileTypes: true })
-    .filter((e) => e.isDirectory() && exists(path.join(saves, e.name, 'level.dat')))
-    .map((e) => {
+  const dirsList = (await fs.promises.readdir(saves, { withFileTypes: true })).filter((e) => e.isDirectory() && exists(path.join(saves, e.name, 'level.dat')))
+  const worlds = await Promise.all(
+    dirsList.map(async (e): Promise<WorldInfo> => {
       const p = path.join(saves, e.name)
       const icon = path.join(p, 'icon.png')
       return {
         folder: e.name,
-        lastPlayed: fs.statSync(path.join(p, 'level.dat')).mtimeMs,
-        size: dirSize(p),
-        icon: exists(icon) ? 'data:image/png;base64,' + fs.readFileSync(icon).toString('base64') : undefined
+        lastPlayed: (await fs.promises.stat(path.join(p, 'level.dat'))).mtimeMs,
+        size: await dirSize(p),
+        icon: exists(icon) ? 'data:image/png;base64,' + (await fs.promises.readFile(icon)).toString('base64') : undefined
       }
     })
-    .sort((a, b) => b.lastPlayed - a.lastPlayed)
+  )
+  return worlds.sort((a, b) => b.lastPlayed - a.lastPlayed)
 }
 
 export function backupWorld(instanceId: string, folder: string): Promise<string> {
@@ -274,18 +277,33 @@ export function backupWorld(instanceId: string, folder: string): Promise<string>
   })
 }
 
-export function listScreenshots(instanceId: string, limit = 40): ScreenshotInfo[] {
+/** Миниатюра скриншота: кешируется на диске, чтобы не декодировать PNG 1080p при каждом открытии. */
+async function screenshotThumb(p: string, mtime: number): Promise<string> {
+  const key = crypto.createHash('sha1').update(`${p}|${mtime}`).digest('hex')
+  const cached = path.join(ensureDir(path.join(dirs.cache(), 'thumbs')), key + '.jpg')
+  try {
+    return 'data:image/jpeg;base64,' + (await fs.promises.readFile(cached)).toString('base64')
+  } catch {
+    /* ещё нет */
+  }
+  // отдаём управление циклу событий между тяжёлыми декодированиями
+  await new Promise((r) => setImmediate(r))
+  const img = nativeImage.createFromBuffer(await fs.promises.readFile(p))
+  if (img.isEmpty()) return ''
+  const jpg = img.resize({ width: 480, quality: 'good' }).toJPEG(82)
+  await fs.promises.writeFile(cached, jpg).catch(() => undefined)
+  return 'data:image/jpeg;base64,' + jpg.toString('base64')
+}
+
+export async function listScreenshots(instanceId: string, limit = 40): Promise<ScreenshotInfo[]> {
   const dir = path.join(gameDir(instanceId), 'screenshots')
   if (!exists(dir)) return []
-  return fs
-    .readdirSync(dir)
-    .filter((f) => /\.(png|jpe?g)$/i.test(f))
-    .map((f) => ({ f, t: fs.statSync(path.join(dir, f)).mtimeMs }))
-    .sort((a, b) => b.t - a.t)
-    .slice(0, limit)
-    .map(({ f, t }) => {
-      const p = path.join(dir, f)
-      const img = nativeImage.createFromPath(p)
-      return { file: f, path: p, time: t, thumb: img.isEmpty() ? '' : img.resize({ width: 640 }).toDataURL() }
-    })
+  const files = (await fs.promises.readdir(dir)).filter((f) => /\.(png|jpe?g)$/i.test(f))
+  const stats = await Promise.all(files.map(async (f) => ({ f, t: (await fs.promises.stat(path.join(dir, f))).mtimeMs })))
+  const out: ScreenshotInfo[] = []
+  for (const { f, t } of stats.sort((a, b) => b.t - a.t).slice(0, limit)) {
+    const p = path.join(dir, f)
+    out.push({ file: f, path: p, time: t, thumb: await screenshotThumb(p, t).catch(() => '') })
+  }
+  return out
 }

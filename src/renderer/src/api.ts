@@ -66,7 +66,7 @@ export const api = {
   askAi: (instanceId: string, analysis: CrashAnalysis, javaInfo: string) => call<string>('crash:ai', instanceId, analysis, javaInfo),
 
   mods: (id: string) => call<ModInfo[]>('mods:list', id),
-  toggleMod: (id: string, file: string, enabled: boolean) => call('mods:toggle', id, file, enabled),
+  toggleMod: (id: string, file: string, enabled: boolean) => call<string>('mods:toggle', id, file, enabled),
   deleteMod: (id: string, file: string) => call('mods:delete', id, file),
   addModFiles: (id: string, files: string[]) => call('mods:addFiles', id, files),
 

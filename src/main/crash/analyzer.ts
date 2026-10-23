@@ -50,7 +50,7 @@ function modName(mods: ModMeta[], id: string): string {
   return m ? `${m.name} (${m.file})` : id
 }
 
-export function analyzeCrash(inst: Instance, exitCode: number | null, logLines: string[], startedAt: number): CrashAnalysis {
+export async function analyzeCrash(inst: Instance, exitCode: number | null, logLines: string[], startedAt: number): Promise<CrashAnalysis> {
   const dir = gameDir(inst.id)
   const crashFile = newestFile(path.join(dir, 'crash-reports'), startedAt, /\.txt$/)
   const hsErr = newestFile(dir, startedAt, /^hs_err_pid\d+\.log$/)
@@ -58,7 +58,7 @@ export function analyzeCrash(inst: Instance, exitCode: number | null, logLines: 
   const hs = readTail(hsErr, 20000)
   const log = logLines.join('\n')
   const all = `${log}\n${crashReport}\n${hs}`
-  const mods = inst.loader === 'vanilla' ? [] : safeMods(inst.id)
+  const mods = inst.loader === 'vanilla' ? [] : await safeMods(inst.id)
   const enabled = mods.filter((m) => m.enabled)
   const causes: CrashCause[] = []
   const suspected = new Set<string>()
@@ -290,9 +290,9 @@ export function analyzeCrash(inst: Instance, exitCode: number | null, logLines: 
   }
 }
 
-function safeMods(id: string): ModMeta[] {
+async function safeMods(id: string): Promise<ModMeta[]> {
   try {
-    return listMods(id, true)
+    return await listMods(id, true)
   } catch {
     return []
   }

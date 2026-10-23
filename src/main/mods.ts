@@ -1,9 +1,10 @@
 import fs from 'fs'
 import path from 'path'
-import AdmZip from 'adm-zip'
 import type { ModInfo } from '@shared/types'
 import { gameDir } from './instances'
-import { ensureDir } from './util/store'
+import { dirs } from './settings'
+import { ensureDir, exists, readJson } from './util/store'
+import { entryBuffer, walkZip } from './util/zip'
 
 export interface ModMeta extends ModInfo {
   packages: string[]
@@ -36,9 +37,25 @@ function parseToml(text: string): { mods: Record<string, string>[]; deps: string
   return { mods, deps }
 }
 
+const META_FILES = ['fabric.mod.json', 'quilt.mod.json', 'META-INF/mods.toml', 'META-INF/neoforge.mods.toml', 'mcmod.info']
+
+/**
+ * Читает из jar только оглавление и несколько маленьких файлов метаданных.
+ * Раньше jar загружался в память целиком (у Create это десятки МБ) — отсюда фризы.
+ */
+async function scanJar(file: string): Promise<{ texts: Map<string, string>; classes: string[] }> {
+  const texts = new Map<string, string>()
+  const classes: string[] = []
+  await walkZip(file, async (e, zip) => {
+    if (e.fileName.endsWith('.class')) classes.push(e.fileName)
+    else if (META_FILES.includes(e.fileName) && e.uncompressedSize < 2_000_000) texts.set(e.fileName, (await entryBuffer(zip, e)).toString('utf8'))
+  }).catch(() => undefined)
+  return { texts, classes }
+}
+
 /** Читает метаданные мода: fabric.mod.json / quilt.mod.json / mods.toml / mcmod.info */
-export function readModMeta(file: string): ModMeta {
-  const st = fs.statSync(file)
+export async function readModMeta(file: string): Promise<ModMeta> {
+  const st = await fs.promises.stat(file)
   const base = path.basename(file)
   const meta: ModMeta = {
     file: base,
@@ -49,16 +66,8 @@ export function readModMeta(file: string): ModMeta {
     packages: [],
     depends: []
   }
-  let zip: AdmZip
-  try {
-    zip = new AdmZip(file)
-  } catch {
-    return meta
-  }
-  const read = (n: string): string | null => {
-    const e = zip.getEntry(n)
-    return e ? zip.readAsText(e) : null
-  }
+  const { texts, classes } = await scanJar(file)
+  const read = (n: string): string | null => texts.get(n) ?? null
   try {
     const fabric = read('fabric.mod.json')
     if (fabric) {
@@ -110,9 +119,8 @@ export function readModMeta(file: string): ModMeta {
   if (meta.version?.includes('${')) meta.version = undefined
   // пакеты классов мода (для поиска мода по стектрейсу)
   const pkgs = new Map<string, number>()
-  for (const e of zip.getEntries()) {
-    if (!e.entryName.endsWith('.class')) continue
-    const parts = e.entryName.split('/')
+  for (const name of classes) {
+    const parts = name.split('/')
     if (parts.length < 4) continue
     const p = parts.slice(0, Math.min(3, parts.length - 1)).join('.')
     pkgs.set(p, (pkgs.get(p) || 0) + 1)
@@ -125,30 +133,85 @@ export function readModMeta(file: string): ModMeta {
   return meta
 }
 
+// ---------------- Кеш метаданных ----------------
+// Ключ — имя без .disabled + размер + время изменения: переименование при
+// включении/выключении не меняет mtime, поэтому мод не перечитывается.
+
+type CachedMeta = Omit<ModMeta, 'file' | 'enabled'>
+let cache: Map<string, CachedMeta> | null = null
+let saveTimer: NodeJS.Timeout | null = null
+const cacheFile = (): string => path.join(dirs.cache(), 'mods-meta-v1.json')
+
+function metaCache(): Map<string, CachedMeta> {
+  if (!cache) cache = new Map(Object.entries(readJson<Record<string, CachedMeta>>(cacheFile(), {})))
+  return cache
+}
+
+function scheduleSave(): void {
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => {
+    saveTimer = null
+    const c = metaCache()
+    // не храним вечно записи удалённых модов
+    const entries = [...c.entries()].slice(-3000)
+    fs.promises.writeFile(cacheFile(), JSON.stringify(Object.fromEntries(entries))).catch(() => undefined)
+  }, 1500)
+}
+
+const keyOf = (file: string, st: fs.Stats): string => `${path.basename(file).replace(/\.disabled$/, '')}|${st.size}|${Math.round(st.mtimeMs)}`
+
+async function cachedMeta(file: string): Promise<ModMeta> {
+  const st = await fs.promises.stat(file)
+  const base = path.basename(file)
+  const key = keyOf(file, st)
+  const hit = metaCache().get(key)
+  if (hit) return { ...hit, packages: [...hit.packages], depends: [...hit.depends], loaders: [...hit.loaders], file: base, enabled: !base.endsWith('.disabled') }
+  const meta = await readModMeta(file)
+  const { file: _f, enabled: _e, ...rest } = meta
+  metaCache().set(key, rest)
+  scheduleSave()
+  return meta
+}
+
+async function mapLimit<T, R>(items: T[], limit: number, fn: (x: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length)
+  let i = 0
+  const worker = async (): Promise<void> => {
+    while (i < items.length) {
+      const idx = i++
+      out[idx] = await fn(items[idx])
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  return out
+}
+
 export function modsDir(instanceId: string): string {
   return ensureDir(path.join(gameDir(instanceId), 'mods'))
 }
 
-export function listMods(instanceId: string, withPackages = false): ModMeta[] {
+export async function listMods(instanceId: string, withPackages = false): Promise<ModMeta[]> {
   const dir = modsDir(instanceId)
-  return fs
-    .readdirSync(dir)
-    .filter((f) => /\.(jar|zip)(\.disabled)?$/i.test(f) && f !== 'aurora-helper.jar')
-    .map((f) => {
-      const m = readModMeta(path.join(dir, f))
-      if (!withPackages) m.packages = []
-      return m
-    })
-    .sort((a, b) => a.name.localeCompare(b.name))
+  const files = (await fs.promises.readdir(dir)).filter((f) => /\.(jar|zip)(\.disabled)?$/i.test(f) && f !== 'aurora-helper.jar')
+  const list = await mapLimit(files, 6, async (f) => {
+    const m = await cachedMeta(path.join(dir, f)).catch(() => null)
+    if (m && !withPackages) m.packages = []
+    return m
+  })
+  return list.filter((m): m is ModMeta => !!m).sort((a, b) => a.name.localeCompare(b.name))
 }
 
-export function toggleMod(instanceId: string, file: string, enabled: boolean): void {
+/** Переключает мод и возвращает его новое имя файла. */
+export async function toggleMod(instanceId: string, file: string, enabled: boolean): Promise<string> {
   const dir = modsDir(instanceId)
-  const cur = path.join(dir, path.basename(file))
-  const target = enabled ? cur.replace(/\.disabled$/, '') : cur.endsWith('.disabled') ? cur : cur + '.disabled'
-  if (cur !== target) fs.renameSync(cur, target)
+  const plain = path.join(dir, path.basename(file).replace(/\.disabled$/, ''))
+  const target = enabled ? plain : plain + '.disabled'
+  // быстрые повторные клики могут прийти со старым именем файла — ищем любой из вариантов
+  const cur = [plain, plain + '.disabled'].find((p) => p !== target && exists(p))
+  if (cur) await fs.promises.rename(cur, target)
+  return path.basename(target)
 }
 
-export function deleteMod(instanceId: string, file: string): void {
-  fs.rmSync(path.join(modsDir(instanceId), path.basename(file)), { force: true })
+export async function deleteMod(instanceId: string, file: string): Promise<void> {
+  await fs.promises.rm(path.join(modsDir(instanceId), path.basename(file)), { force: true })
 }

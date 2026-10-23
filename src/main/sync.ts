@@ -321,7 +321,7 @@ async function buildManifest(inst: Instance, prov: Provider, task?: TaskHandle):
     task?.update(0.5, `Поиск ${rest.length} файлов на CurseForge`)
     try {
       const prints = new Map<number, SyncFile>()
-      for (const f of rest) prints.set(cfFingerprint(fs.readFileSync(path.join(gdir, f.path))), f)
+      for (const f of rest) prints.set(cfFingerprint(await fs.promises.readFile(path.join(gdir, f.path))), f)
       const r = await cfPost<{ data: { exactMatches: { file: { id: number; fileName: string; downloadUrl: string | null; fileFingerprint: number } }[] } }>(
         '/fingerprints/432',
         { fingerprints: [...prints.keys()] }

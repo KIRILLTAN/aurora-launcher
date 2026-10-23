@@ -145,6 +145,17 @@ export function sha1File(file: string): Promise<string> {
   })
 }
 
+async function isPresentAsync(item: DownloadItem): Promise<boolean> {
+  try {
+    const st = await fs.promises.stat(item.path)
+    if (!st.isFile()) return false
+    if (item.size && st.size !== item.size) return false
+    return st.size > 0 || item.size === 0
+  } catch {
+    return false
+  }
+}
+
 /** Файл уже скачан и выглядит целым (по размеру; sha1 проверяется при загрузке). */
 export function isPresent(item: DownloadItem): boolean {
   try {
@@ -218,12 +229,19 @@ export async function downloadAll(
   opts: { concurrency?: number; onProgress?: (done: number, total: number, bytes: number) => void; signal?: AbortSignal } = {}
 ): Promise<void> {
   const seen = new Set<string>()
-  const queue = items.filter((i) => {
+  const unique = items.filter((i) => {
     const key = path.resolve(i.path)
     if (seen.has(key)) return false
     seen.add(key)
-    return !isPresent(i)
+    return true
   })
+  // проверка тысяч ассетов асинхронно и пачками — без подвисания окна
+  const queue: DownloadItem[] = []
+  for (let i = 0; i < unique.length; i += 256) {
+    const part = unique.slice(i, i + 256)
+    const present = await Promise.all(part.map(isPresentAsync))
+    part.forEach((it, k) => !present[k] && queue.push(it))
+  }
   const total = queue.length
   let done = 0
   let bytes = 0
