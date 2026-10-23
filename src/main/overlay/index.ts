@@ -12,6 +12,7 @@ import { exists, ensureDir } from '../util/store'
 import { clientJarPath } from '../minecraft/install'
 import type { ResolvedVersion } from '../minecraft/versions'
 import { buildOverlayMappings } from './mappings'
+import { emit } from '../events'
 
 /*
  * Оверлей-помощник: Java-агент присылает состояние игры по локальному сокету,
@@ -30,7 +31,8 @@ export const DEFAULT_OVERLAY: OverlayConfig = {
   armor: true,
   offhand: true,
   rightSide: false,
-  maxLines: 8
+  maxLines: 8,
+  borderless: true
 }
 
 interface Session {
@@ -94,7 +96,7 @@ function ensureServer(): Promise<void> {
 
 /** Аргумент -javaagent для запуска игры или null, если помощник выключен/не поддерживается. */
 export async function prepareOverlay(inst: Instance, v: ResolvedVersion): Promise<{ arg: string | null; reason?: string }> {
-  if (!getSettings().helperEnabled) return { arg: null }
+  if (!getSettings().helperEnabled) return { arg: null, reason: 'выключен — включите «Настройки → Кастомный помощник в игре»' }
   const jar = await agentJar()
   if (!jar) return { arg: null, reason: 'не удалось скачать агент оверлея' }
   const map = await buildOverlayMappings(inst, v).catch(() => null)
@@ -102,7 +104,8 @@ export async function prepareOverlay(inst: Instance, v: ResolvedVersion): Promis
   await ensureServer()
   const token = crypto.randomBytes(12).toString('hex')
   sessions.set(token, { token, instance: inst, rootId: v.rootId })
-  return { arg: `-javaagent:${jar}=${port}|${token}|${map.file}` }
+  const flags = overlayConfig().borderless ? 'b' : ''
+  return { arg: `-javaagent:${jar}=${port}|${token}|${map.file}|${flags}` }
 }
 
 function onConnection(socket: net.Socket): void {
@@ -125,6 +128,15 @@ function onConnection(socket: net.Socket): void {
           session.missing = hello.missing
           session.snapshots = 0
           if (hello.missing.length) console.warn('[overlay] не найдено:', hello.missing.join(', '))
+          emit('game:log', [
+            {
+              instanceId: session.instance.id,
+              line: hello.missing.length
+                ? `[Aurora] Помощник F6 подключён, но не нашёл в игре: ${hello.missing.join(', ')}`
+                : '[Aurora] Помощник F6 подключён — нажмите F6 в игре',
+              level: hello.missing.length ? 'warn' : 'info'
+            }
+          ])
           openWindow(session)
           registerKeys()
         } catch {
@@ -339,8 +351,16 @@ async function findIcon(session: Session, descriptionId: string): Promise<string
 }
 
 /** Диагностика для самопроверки. */
-export function overlayDiagnostics(): { instance: string; connected: boolean; missing?: string[]; snapshots: number; last?: unknown }[] {
-  return [...sessions.values()].map((s) => ({ instance: s.instance.id, connected: !!s.socket, missing: s.missing, snapshots: s.snapshots || 0, last: s.last }))
+export function overlayDiagnostics(): { instance: string; connected: boolean; missing?: string[]; snapshots: number; last?: unknown; visible?: boolean; bounds?: Electron.Rectangle }[] {
+  return [...sessions.values()].map((s) => ({
+    instance: s.instance.id,
+    connected: !!s.socket,
+    missing: s.missing,
+    snapshots: s.snapshots || 0,
+    last: s.last,
+    visible: s.win && !s.win.isDestroyed() ? s.win.isVisible() : undefined,
+    bounds: s.win && !s.win.isDestroyed() ? s.win.getBounds() : undefined
+  }))
 }
 
 export function shutdownOverlay(): void {

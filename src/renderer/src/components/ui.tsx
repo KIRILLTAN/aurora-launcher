@@ -12,6 +12,63 @@ export const LOADERS: { id: LoaderType; label: string; color: string }[] = [
 ]
 export const loaderLabel = (l: LoaderType): string => LOADERS.find((x) => x.id === l)?.label || l
 
+/** Иконки загрузчиков: свои SVG в стиле каждого проекта. */
+export function LoaderIcon({ loader, size = 22 }: { loader: LoaderType; size?: number }) {
+  const common = { width: size, height: size, viewBox: '0 0 32 32', 'aria-hidden': true, style: { display: 'block', flex: 'none' } } as const
+  switch (loader) {
+    case 'fabric':
+      // свёрток ткани со строчкой
+      return (
+        <svg {...common}>
+          <path d="M7 9.5 16.5 4 25 9l-9.5 5.5z" fill="#efd9b4" />
+          <path d="M7 9.5v12l8.5 5v-12z" fill="#c9a36c" />
+          <path d="M15.5 14.5v12l9.5-5.5V9z" fill="#a9824f" />
+          <path d="M9.5 12.3v7.6M12.5 14v7.6" stroke="#7a5a30" strokeWidth="1.2" strokeDasharray="1.6 1.4" />
+          <path d="M18 16.8 22.5 14.2M18 20 22.5 17.4" stroke="#efd9b4" strokeWidth="1.2" strokeDasharray="1.6 1.4" />
+        </svg>
+      )
+    case 'quilt':
+      // лоскутное одеяло 2×2
+      return (
+        <svg {...common}>
+          <rect x="4" y="4" width="11" height="11" rx="3" fill="#dcb6ff" />
+          <rect x="17" y="4" width="11" height="11" rx="3" fill="#9f6bff" />
+          <rect x="4" y="17" width="11" height="11" rx="3" fill="#7b4fe0" />
+          <rect x="17" y="17" width="11" height="11" rx="3" fill="#c491ff" />
+          <path d="M6.5 9.5h6M19.5 22.5h6" stroke="#fff" strokeOpacity=".7" strokeWidth="1.3" strokeDasharray="1.5 1.3" />
+        </svg>
+      )
+    case 'forge':
+      // наковальня
+      return (
+        <svg {...common}>
+          <path d="M3 9h17.5c3.6 0 6.3 1.4 8.5 3.6-2.6.3-5 .9-6.6 2.6-.8.9-1 2-1 3.3V20h-9v-1.5c0-2-1.3-3.4-3.5-4.1C6.4 13.8 4 12.4 3 9z" fill="#9db0ff" />
+          <path d="M3 9h17.5c2 0 3.8.4 5.4 1.2H3.7z" fill="#d3dcff" />
+          <path d="M10 20h12l2.5 5.5h-17z" fill="#5c6fc2" />
+        </svg>
+      )
+    case 'neoforge':
+      // наковальня с искрой
+      return (
+        <svg {...common}>
+          <path d="M3 11h16.5c3.5 0 6 1.3 8 3.4-2.4.3-4.7.9-6.2 2.5-.8.8-1 1.9-1 3.1V21h-8.6v-1.4c0-1.9-1.2-3.2-3.3-3.9C6.2 15.2 3.9 13.9 3 11z" fill="#ffa36e" />
+          <path d="M9.2 21h11.6l2.4 5h-16.4z" fill="#d9612c" />
+          <path d="M24 2.5l1.2 3.1 3.3.4-2.5 2.1.8 3.2L24 9.6l-2.8 1.7.8-3.2-2.5-2.1 3.3-.4z" fill="#ffd36e" />
+        </svg>
+      )
+    default:
+      // блок травы
+      return (
+        <svg {...common}>
+          <path d="M16 3.5 28 10 16 16.5 4 10z" fill="#7bd88f" />
+          <path d="M4 10v12.5L16 29V16.5z" fill="#8a5a3b" />
+          <path d="M16 16.5V29l12-6.5V10z" fill="#6b4329" />
+          <path d="M4 10l12 6.5v3.2L4 13.2zM16 16.5 28 10v3.2l-12 6.5z" fill="#5cbf6f" />
+        </svg>
+      )
+  }
+}
+
 export const ACCOUNT_LABEL: Record<Account['type'], string> = {
   microsoft: 'Microsoft',
   offline: 'Оффлайн',

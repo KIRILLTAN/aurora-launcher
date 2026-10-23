@@ -145,6 +145,12 @@ export function sha1File(file: string): Promise<string> {
   })
 }
 
+async function verifyItem(item: DownloadItem): Promise<boolean> {
+  if (!item.sha1) return isPresentAsync(item)
+  if (!(await isPresentAsync(item))) return false
+  return (await sha1File(item.path).catch(() => '')) === item.sha1.toLowerCase()
+}
+
 async function isPresentAsync(item: DownloadItem): Promise<boolean> {
   try {
     const st = await fs.promises.stat(item.path)
@@ -226,7 +232,7 @@ export async function downloadFile(item: DownloadItem, onBytes?: (n: number) => 
 /** Параллельная загрузка с общим прогрессом. Уже скачанные файлы пропускаются. */
 export async function downloadAll(
   items: DownloadItem[],
-  opts: { concurrency?: number; onProgress?: (done: number, total: number, bytes: number) => void; signal?: AbortSignal } = {}
+  opts: { concurrency?: number; onProgress?: (done: number, total: number, bytes: number) => void; signal?: AbortSignal; verify?: boolean } = {}
 ): Promise<void> {
   const seen = new Set<string>()
   const unique = items.filter((i) => {
@@ -239,7 +245,9 @@ export async function downloadAll(
   const queue: DownloadItem[] = []
   for (let i = 0; i < unique.length; i += 256) {
     const part = unique.slice(i, i + 256)
-    const present = await Promise.all(part.map(isPresentAsync))
+    // verify — чистая установка: сверяем контрольные суммы, повреждённое и неизвестное качаем заново
+    const present = await Promise.all(part.map((it) => (opts.verify ? verifyItem(it) : isPresentAsync(it))))
+    throwIfAborted(opts.signal)
     part.forEach((it, k) => !present[k] && queue.push(it))
   }
   const total = queue.length

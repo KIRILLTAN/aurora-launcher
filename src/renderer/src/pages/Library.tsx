@@ -3,7 +3,7 @@ import { Plus, Play, Square, Search, Boxes, Upload, Cloud, FolderInput } from 'l
 import type { LoaderType } from '@shared/types'
 import { api } from '../api'
 import { useStore } from '../store'
-import { InstanceIcon, loaderLabel, timeAgo, LOADERS } from '../components/ui'
+import { InstanceIcon, loaderLabel, timeAgo, LOADERS, LoaderIcon } from '../components/ui'
 import { PullButton } from '../components/Cloud'
 import { beginImport } from '../dialogs/Import'
 
@@ -59,7 +59,8 @@ export default function LibraryPage() {
         <div className="seg">
           <button className={loader === 'all' ? 'active' : ''} onClick={() => setLoader('all')}>Все</button>
           {LOADERS.map((l) => (
-            <button key={l.id} className={loader === l.id ? 'active' : ''} onClick={() => setLoader(l.id)}>
+            <button key={l.id} className={loader === l.id ? 'active' : ''} onClick={() => setLoader(l.id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <LoaderIcon loader={l.id} size={15} />
               {l.label}
             </button>
           ))}
@@ -94,7 +95,7 @@ export default function LibraryPage() {
                 </div>
                 <div className="meta">
                   <span className="chip accent">{i.mcVersion}</span>
-                  <span className="chip">{loaderLabel(i.loader)}</span>
+                  <span className="chip"><LoaderIcon loader={i.loader} size={12} /> {loaderLabel(i.loader)}</span>
                   {i.source?.type && i.source.type !== 'file' && <span className="chip">{i.source.type}</span>}
                 </div>
                 <div className="bottom">

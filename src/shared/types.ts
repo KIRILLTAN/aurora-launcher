@@ -8,6 +8,8 @@ export interface Instance {
   loaderVersion?: string
   /** id установленной версии (например fabric-loader-0.16.5-1.21.1) */
   versionId?: string
+  /** при первом запуске скачать и проверить файлы версии заново */
+  cleanInstall?: boolean
   icon?: string
   group?: string
   createdAt: number
@@ -306,6 +308,8 @@ export interface OverlayConfig {
   offhand: boolean
   rightSide: boolean
   maxLines: number
+  /** полноэкранный режим игры заменяется на окно без рамки, чтобы оверлей был виден */
+  borderless: boolean
 }
 
 export interface ProxyConfig {

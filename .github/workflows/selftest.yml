@@ -38,3 +38,51 @@ jobs:
         with:
           name: selftest
           path: selftest
+
+  # Оверлей на настоящем Windows: игра в полноэкранном режиме, программный OpenGL (Mesa llvmpipe)
+  selftest-windows:
+    needs: helper
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: helper-*
+          path: resources/helper
+          merge-multiple: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npm run build
+      - name: Mesa (программный OpenGL для игры без видеокарты)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $url = gh release view -R pal1000/mesa-dist-win --json assets --jq '.assets[] | select(.name | test("release-msvc\.7z$")) | .url'
+          Write-Host "Mesa: $url"
+          Invoke-WebRequest $url -OutFile mesa.7z
+          7z x mesa.7z -omesa | Out-Null
+          New-Item -ItemType Directory -Force gl | Out-Null
+          Copy-Item mesa/x64/*.dll gl/
+          Get-ChildItem gl
+      - name: Запуск лаунчера в режиме самопроверки (Windows)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force selftest | Out-Null
+          npx electron . 2>&1 | Tee-Object selftest/electron.log
+        env:
+          AURORA_SELFTEST: ${{ github.workspace }}\selftest
+          AURORA_SELFTEST_MODE: windows
+          AURORA_SELFTEST_GL: ${{ github.workspace }}\gl
+          GALLIUM_DRIVER: llvmpipe
+      - run: Get-Content selftest/result.json
+        if: always()
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: selftest-windows
+          path: selftest

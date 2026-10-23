@@ -23,10 +23,11 @@ const OVERLAY_TOGGLES: [keyof OverlayConfig, string][] = [
   ['coords', 'Координаты'],
   ['fps', 'FPS'],
   ['clock', 'Часы'],
-  ['rightSide', 'Панель справа']
+  ['rightSide', 'Панель справа'],
+  ['borderless', 'Полный экран без рамки']
 ]
 
-const DEFAULT_OVERLAY: OverlayConfig = { loot: true, worldIcons: true, radius: 24, arrows: true, coords: false, fps: false, clock: false, armor: true, offhand: true, rightSide: false, maxLines: 8 }
+const DEFAULT_OVERLAY: OverlayConfig = { loot: true, worldIcons: true, radius: 24, arrows: true, coords: false, fps: false, clock: false, armor: true, offhand: true, rightSide: false, maxLines: 8, borderless: true }
 
 export default function SettingsPage() {
   const { settings, setSettings, toast, update } = useStore()

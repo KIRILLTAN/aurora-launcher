@@ -42,10 +42,11 @@ export async function runSelfTest(win: BrowserWindow, outDir: string): Promise<v
 
     // оверлей-помощник на разных загрузчиках, мир с лутом, скин оффлайн-аккаунта, зеркала
     try {
-      await overlaySelfTest(acc, outDir, log)
+      await overlaySelfTest(acc, outDir, log, process.env['AURORA_SELFTEST_MODE'] === 'windows')
     } catch (e) {
       log('overlay-fatal', (e as Error).stack || String(e))
     }
+    if (process.env['AURORA_SELFTEST_MODE'] === 'windows') throw new Error('stop')
 
     const vanilla = createInstance({ name: 'Тест Fabric 1.21.1', mcVersion: '1.21.1', loader: 'fabric' })
     for (const [loader, mc] of [['forge', '1.20.1'], ['neoforge', '1.21.1'], ['forge', '1.12.2']] as const) {
@@ -92,7 +93,7 @@ export async function runSelfTest(win: BrowserWindow, outDir: string): Promise<v
     })
     const orig = win.webContents.send.bind(win.webContents)
     win.webContents.send = ((ch: string, payload: { line: string; analysis?: unknown }) => {
-      if (ch === 'game:log') lines.push(payload.line)
+      if (ch === 'game:log') for (const l of Array.isArray(payload) ? (payload as { line: string }[]) : [payload]) lines.push(l.line)
       if (ch === 'task:update') {
         const t = payload as unknown as Task
         taskLog = [t, ...taskLog.filter((x) => x.id !== t.id)]
@@ -202,7 +203,7 @@ export async function runSelfTest(win: BrowserWindow, outDir: string): Promise<v
     await wait(2500)
     await shot('page-library-import')
   } catch (e) {
-    log('fatal', (e as Error).stack || String(e))
+    if ((e as Error).message !== 'stop') log('fatal', (e as Error).stack || String(e))
   }
   ipcMain.removeAllListeners()
   app.exit(0)

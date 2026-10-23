@@ -213,6 +213,7 @@ public final class Agent {
         int port = Integer.parseInt(a[0]);
         String token = a.length > 1 ? a[1] : "";
         if (a.length > 2) loadMappings(a[2]);
+        boolean borderlessWanted = a.length > 3 && a[3].contains("b") && !System.getProperty("os.name", "").toLowerCase().contains("mac");
 
         // ждём, пока игра загрузится
         Object mc = null;
@@ -234,8 +235,19 @@ public final class Agent {
         final AtomicReference<String> latest = new AtomicReference<>();
         final AtomicBoolean pending = new AtomicBoolean(false);
         Executor executor = game instanceof Executor ? (Executor) game : null;
+        long tick = 0;
         while (true) {
             long started = System.nanoTime();
+            // раз в ~250 мс: полноэкранный режим → окно без рамки (поверх эксклюзивного режима оверлей не виден)
+            if (borderlessWanted && executor != null && tick++ % 15 == 0) {
+                executor.execute(() -> {
+                    try {
+                        Fullscreen.check(game);
+                    } catch (Throwable e) {
+                        System.err.println("[AuroraOverlay] borderless: " + e);
+                    }
+                });
+            }
             if (executor != null) {
                 if (pending.compareAndSet(false, true)) {
                     executor.execute(() -> {
@@ -417,6 +429,115 @@ public final class Agent {
         }
         if (Boolean.TRUE.equals(call(st, STACK, "hasFoil"))) sb.append(",\"g\":1");
         sb.append('}');
+    }
+
+    // ---------------- Полный экран без рамки ----------------
+
+    /**
+     * Эксклюзивный полноэкранный режим перекрывает все окна, поэтому оверлей в нём не виден.
+     * Переводим игру в окно без рамки на весь монитор: выглядит так же, а оверлей виден.
+     * F11 и настройка «Полный экран» продолжают работать: выход возвращает обычное окно.
+     */
+    static final class Fullscreen {
+        private static final int GLFW_DECORATED = 0x00020005;
+        private static boolean borderless;
+        private static boolean exiting;
+        private static long[] pending; // {monitor} — ждём, пока игра выйдет из полноэкранного режима
+        private static Class<?> glfw;
+
+        private static Method gl(String name, Class<?>... types) throws Exception {
+            if (glfw == null) {
+                glfw = cls("org.lwjgl.glfw.GLFW");
+                if (glfw == null) throw new IllegalStateException("нет GLFW");
+            }
+            return glfw.getMethod(name, types);
+        }
+
+        private static long handle(Object window) {
+            Object h = call(window, WINDOW, "getWindow");
+            if (!(h instanceof Long)) h = call(window, WINDOW, "handle");
+            return h instanceof Long ? (Long) h : 0;
+        }
+
+        private static Boolean optionFullscreen(Object mc) {
+            Object options = get(mc, MC, "options");
+            Object v = options == null ? null : get(options, OPTIONS, "fullscreen");
+            if (v instanceof Boolean) return (Boolean) v;
+            Object val = v == null ? null : call(v, OPTION_INSTANCE, "get");
+            return val instanceof Boolean ? (Boolean) val : null;
+        }
+
+        private static void setOptionFullscreen(Object mc, boolean on) {
+            Object options = get(mc, MC, "options");
+            if (options == null) return;
+            Field f = field(OPTIONS, "fullscreen");
+            try {
+                Object v = f == null ? null : f.get(options);
+                if (v instanceof Boolean) f.setBoolean(options, on);
+                else if (v != null) call(v, OPTION_INSTANCE, "set", on);
+                call(options, OPTIONS, "save");
+            } catch (Throwable ignored) {
+            }
+        }
+
+        static void check(Object mc) throws Exception {
+            Object window = call(mc, MC, "getWindow");
+            if (window == null) return;
+            long h = handle(window);
+            if (h == 0) return;
+            boolean fs = Boolean.TRUE.equals(call(window, WINDOW, "isFullscreen"));
+
+            if (pending != null) {
+                if (fs) return;
+                long monitor = pending[0];
+                pending = null;
+                Object mode = gl("glfwGetVideoMode", long.class).invoke(null, monitor);
+                if (mode == null) return;
+                int w = (Integer) mode.getClass().getMethod("width").invoke(mode);
+                int hh = (Integer) mode.getClass().getMethod("height").invoke(mode);
+                int[] mx = new int[1], my = new int[1];
+                gl("glfwGetMonitorPos", long.class, int[].class, int[].class).invoke(null, monitor, mx, my);
+                gl("glfwSetWindowAttrib", long.class, int.class, int.class).invoke(null, h, GLFW_DECORATED, 0);
+                // на 1 пиксель выше экрана: иначе драйвер может снова сделать окно «эксклюзивным»
+                gl("glfwSetWindowMonitor", long.class, long.class, int.class, int.class, int.class, int.class, int.class)
+                        .invoke(null, h, 0L, mx[0], my[0], w, hh + 1, -1);
+                borderless = true;
+                System.out.println("[AuroraOverlay] полный экран без рамки " + w + "x" + hh);
+                return;
+            }
+
+            if (!borderless && fs) {
+                // игра в эксклюзивном полноэкранном режиме — запоминаем монитор и выходим из него
+                long monitor = (Long) gl("glfwGetWindowMonitor", long.class).invoke(null, h);
+                if (monitor == 0) monitor = (Long) gl("glfwGetPrimaryMonitor").invoke(null);
+                if (monitor == 0) return;
+                call(window, WINDOW, "toggleFullScreen");
+                pending = new long[]{monitor};
+                return;
+            }
+
+            if (borderless && fs) {
+                // F11 — игра хочет в полноэкранный режим, а пользователь — выйти из него:
+                // отменяем переключение и на следующей проверке ставим обычное окно
+                call(window, WINDOW, "toggleFullScreen");
+                setOptionFullscreen(mc, false);
+                exiting = true;
+                return;
+            }
+            if (borderless && (exiting || Boolean.FALSE.equals(optionFullscreen(mc)))) {
+                // «Полный экран: выкл» в настройках или выход по F11 — возвращаем обычное окно
+                borderless = false;
+                exiting = false;
+                gl("glfwSetWindowAttrib", long.class, int.class, int.class).invoke(null, h, GLFW_DECORATED, 1);
+                long monitor = (Long) gl("glfwGetPrimaryMonitor").invoke(null);
+                Object mode = monitor == 0 ? null : gl("glfwGetVideoMode", long.class).invoke(null, monitor);
+                int sw = mode == null ? 1920 : (Integer) mode.getClass().getMethod("width").invoke(mode);
+                int sh = mode == null ? 1080 : (Integer) mode.getClass().getMethod("height").invoke(mode);
+                int w = Math.min(1280, sw), hh = Math.min(720, sh);
+                gl("glfwSetWindowMonitor", long.class, long.class, int.class, int.class, int.class, int.class, int.class)
+                        .invoke(null, h, 0L, (sw - w) / 2, (sh - hh) / 2, w, hh, -1);
+            }
+        }
     }
 
     // ---------------- JSON ----------------

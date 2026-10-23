@@ -40,6 +40,12 @@ const C = {
 
 const NEEDS: Need[] = [
   { cls: C.MC, name: 'getInstance', argc: 0 },
+  { cls: C.WINDOW, name: 'isFullscreen', argc: 0 },
+  { cls: C.WINDOW, name: 'toggleFullScreen', argc: 0 },
+  { cls: C.WINDOW, name: 'getWindow', argc: 0 },
+  { cls: C.OPTIONS, name: 'fullscreen', field: true },
+  { cls: C.OPTIONS, name: 'save', argc: 0 },
+  { cls: C.OPTION_INSTANCE, name: 'set', argc: 1 },
   { cls: C.MC, name: 'getWindow', argc: 0 },
   { cls: C.MC, name: 'isWindowActive', argc: 0 },
   { cls: C.MC, name: 'getFps', argc: 0 },
@@ -226,7 +232,7 @@ function findLibrary(prefix: string[], fileRe: RegExp): string | null {
 export async function buildOverlayMappings(inst: Instance, v: ResolvedVersion): Promise<{ file: string; ns: Namespace } | null> {
   const ns = overlayNamespace(inst, v)
   if (!ns) return null
-  const out = path.join(ensureDir(path.join(dirs.cache(), 'overlay')), `${v.id}-${ns}-v2.tsv`)
+  const out = path.join(ensureDir(path.join(dirs.cache(), 'overlay')), `${v.id}-${ns}-v3.tsv`)
   if (exists(out)) return { file: out, ns }
 
   const lines: string[] = []

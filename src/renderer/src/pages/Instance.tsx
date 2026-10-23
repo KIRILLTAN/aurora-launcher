@@ -3,7 +3,7 @@ import { ArrowLeft, Play, Square, FolderOpen, Copy, Trash2, RefreshCw, Package, 
 import type { Instance, JavaInstall, ModInfo, ModUpdate, WorldInfo, ScreenshotInfo } from '@shared/types'
 import { api } from '../api'
 import { useStore, useLogs } from '../store'
-import { InstanceIcon, loaderLabel, fmtPlaytime, Switch, Spinner, Modal } from '../components/ui'
+import { InstanceIcon, loaderLabel, fmtPlaytime, Switch, Spinner, Modal, LoaderIcon } from '../components/ui'
 import { CatalogBrowser } from './Catalog'
 import { PullButton } from "../components/Cloud"
 
@@ -43,7 +43,7 @@ export default function InstancePage() {
           <h1 style={{ margin: 0, fontSize: 26 }}>{inst.name}</h1>
           <div className="row wrap" style={{ marginTop: 8 }}>
             <span className="chip accent">Minecraft {inst.mcVersion}</span>
-            <span className="chip">{loaderLabel(inst.loader)} {inst.loaderVersion || ''}</span>
+            <span className="chip"><LoaderIcon loader={inst.loader} size={13} /> {loaderLabel(inst.loader)} {inst.loaderVersion || ''}</span>
             <span className="chip">Наиграно: {fmtPlaytime(inst.playTime)}</span>
             {inst.source?.name && <span className="chip">{inst.source.type}: {inst.source.name}</span>}
             {settings?.helperEnabled && helperOk && <span className="chip ok"><Keyboard size={11} /> F6 помощник</span>}

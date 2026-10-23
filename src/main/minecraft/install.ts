@@ -91,7 +91,7 @@ interface AssetIndex {
 }
 
 /** Полная установка версии (ванилла или уже установленный загрузчик): jar, библиотеки, ассеты, нативы. */
-export async function installVersion(id: string, task?: TaskHandle, gameDir?: string): Promise<ResolvedVersion> {
+export async function installVersion(id: string, task?: TaskHandle, gameDir?: string, verify = false): Promise<ResolvedVersion> {
   task?.update(0.01, `Чтение версии ${id}`)
   const v = await resolveVersion(id)
   const items: DownloadItem[] = []
@@ -130,6 +130,7 @@ export async function installVersion(id: string, task?: TaskHandle, gameDir?: st
   await downloadAll(items, {
     concurrency: getSettings().concurrency,
     signal: task?.signal,
+    verify,
     onProgress: (done, total) => task?.update(0.05 + 0.9 * (total ? done / total : 1), `Загрузка файлов: ${done}/${total}`)
   })
 

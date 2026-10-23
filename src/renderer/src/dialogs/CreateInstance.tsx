@@ -3,7 +3,7 @@ import { Boxes, Compass, FileArchive, Search, Sparkles } from 'lucide-react'
 import type { LoaderType, LoaderVersion, McVersion } from '@shared/types'
 import { api } from '../api'
 import { useStore } from '../store'
-import { Modal, LOADERS, Spinner } from '../components/ui'
+import { Modal, LOADERS, LoaderIcon, Spinner, Switch } from '../components/ui'
 import { CatalogBrowser } from '../pages/Catalog'
 import { beginImport } from './Import'
 
@@ -14,7 +14,8 @@ export default function CreateInstanceDialog() {
   const [tab, setTab] = useState<Tab>('version')
   const [versions, setVersions] = useState<McVersion[] | null>(null)
   const [vErr, setVErr] = useState<string>()
-  const [filter, setFilter] = useState<'release' | 'snapshot' | 'old'>('release')
+  const [filter, setFilter] = useState<'release' | 'snapshot' | 'old' | 'all'>('release')
+  const [clean, setClean] = useState(false)
   const [q, setQ] = useState('')
   const [mc, setMc] = useState<string>()
   const [loader, setLoader] = useState<LoaderType>('vanilla')
@@ -57,6 +58,7 @@ export default function CreateInstanceDialog() {
     if (!versions) return []
     return versions.filter((v) => {
       if (q && !v.id.includes(q)) return false
+      if (filter === 'all') return true
       if (filter === 'release') return v.type === 'release'
       if (filter === 'snapshot') return v.type === 'snapshot'
       return v.type === 'old_beta' || v.type === 'old_alpha'
@@ -68,7 +70,7 @@ export default function CreateInstanceDialog() {
     if (loader !== 'vanilla' && !loaderVersion) return toast(`Для ${mc} нет версий ${loader}`, 'error')
     setBusy(true)
     try {
-      const inst = await api.createInstance({ name: name.trim() || mc, mcVersion: mc, loader, loaderVersion: loader === 'vanilla' ? undefined : loaderVersion })
+      const inst = await api.createInstance({ name: name.trim() || mc, mcVersion: mc, loader, loaderVersion: loader === 'vanilla' ? undefined : loaderVersion, cleanInstall: clean || undefined })
       setSettings(await api.settings())
       await refreshInstances()
       toast(`Сборка «${inst.name}» создана. Файлы игры скачаются при первом запуске.`, 'success')
@@ -122,6 +124,7 @@ export default function CreateInstanceDialog() {
               <button className={filter === 'release' ? 'active' : ''} onClick={() => setFilter('release')}>Релизы</button>
               <button className={filter === 'snapshot' ? 'active' : ''} onClick={() => setFilter('snapshot')}>Снапшоты</button>
               <button className={filter === 'old' ? 'active' : ''} onClick={() => setFilter('old')}>Beta/Alpha</button>
+              <button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>Все версии</button>
             </div>
             {!versions && !vErr && <div className="row muted"><Spinner /> Загрузка версий…</div>}
             {vErr && <div style={{ color: 'var(--danger)' }}>{vErr}</div>}
@@ -129,6 +132,7 @@ export default function CreateInstanceDialog() {
               {shown.map((v) => (
                 <div key={v.id} className={`version-opt ${mc === v.id ? 'active' : ''}`} onClick={() => setMc(v.id)}>
                   <b>{v.id}</b>
+                  {filter === 'all' && v.type !== 'release' && <span className="chip">{v.type === 'snapshot' ? 'снапшот' : v.type === 'old_beta' ? 'beta' : 'alpha'}</span>}
                   <span className="grow" />
                   <span className="small muted">{new Date(v.releaseTime).toLocaleDateString('ru-RU')}</span>
                 </div>
@@ -145,7 +149,7 @@ export default function CreateInstanceDialog() {
               <div className="loader-pick">
                 {LOADERS.map((l) => (
                   <button key={l.id} className={loader === l.id ? 'active' : ''} onClick={() => setLoader(l.id)}>
-                    <span style={{ width: 22, height: 22, borderRadius: 7, background: l.color, display: 'block' }} />
+                    <LoaderIcon loader={l.id} size={26} />
                     {l.label}
                   </button>
                 ))}
@@ -168,6 +172,13 @@ export default function CreateInstanceDialog() {
                 )}
               </div>
             )}
+            <div className="row" style={{ justifyContent: 'space-between', gap: 14 }}>
+              <div>
+                <div style={{ fontWeight: 600 }}>Скачать заново</div>
+                <div className="small muted">Не брать уже скачанные файлы этой версии, а скачать и проверить их заново. Моды, миры и настройки у каждой сборки и так свои.</div>
+              </div>
+              <Switch on={clean} onChange={setClean} />
+            </div>
             <div className="card pad small muted">
               Minecraft <b style={{ color: 'var(--text)' }}>{mc || '—'}</b>
               {loader !== 'vanilla' && <> + {LOADERS.find((l) => l.id === loader)?.label} {loaderVersion}</>}. Нужная Java подберётся и скачается автоматически.

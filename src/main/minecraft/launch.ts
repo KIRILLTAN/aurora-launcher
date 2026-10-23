@@ -83,7 +83,12 @@ export async function ensureInstalled(inst: Instance, task: TaskHandle, force = 
     inst.versionId = versionId
     saveInstance(inst)
   }
-  return installVersion(versionId, task, gameDir(inst.id))
+  if (force) {
+    // чистая установка: маппинги помощника тоже строим заново
+    const cache = path.join(dirs.cache(), 'overlay')
+    if (exists(cache)) for (const f of await fs.promises.readdir(cache)) if (f.startsWith(versionId + '-') && f.endsWith('.tsv')) await fs.promises.rm(path.join(cache, f), { force: true })
+  }
+  return installVersion(versionId, task, gameDir(inst.id), force)
 }
 
 function substitute(s: string, vars: Record<string, string>): string {
@@ -155,10 +160,22 @@ export async function launchInstance(id: string, accountId: string | undefined, 
     task.detail('Проверка аккаунта')
     const auth = await getLaunchAuth(accountId)
 
-    const v = await ensureInstalled(inst, task)
+    const v = await ensureInstalled(inst, task, !!inst.cleanInstall)
+    if (inst.cleanInstall) {
+      inst.cleanInstall = undefined
+      saveInstance(inst)
+    }
     const required = requiredJavaMajor(inst.mcVersion, v.javaVersion?.majorVersion)
     task.detail('Подбор Java')
     const java = await resolveJava(inst, required, task)
+    // только для самопроверки на Windows без видеокарты: программный OpenGL (Mesa) рядом с java.exe
+    const glDir = process.env['AURORA_SELFTEST_GL']
+    if (glDir && process.platform === 'win32') {
+      for (const f of fs.readdirSync(glDir)) {
+        const dst = path.join(path.dirname(java.path), f)
+        if (f.endsWith('.dll') && !exists(dst)) fs.copyFileSync(path.join(glDir, f), dst)
+      }
+    }
 
     const gdir = gameDir(id)
     removeLegacyHelper(inst)

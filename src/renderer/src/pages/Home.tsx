@@ -3,7 +3,7 @@ import { Play, Square, Plus, Newspaper, Sparkles, Clock, Github, FolderOpen, Set
 import type { FeaturedPack, Instance, RemoteInfo } from '@shared/types'
 import { api } from '../api'
 import { useStore } from '../store'
-import { InstanceIcon, loaderLabel, fmtPlaytime, timeAgo, Markdown, Spinner } from '../components/ui'
+import { InstanceIcon, loaderLabel, fmtPlaytime, timeAgo, Markdown, Spinner, LoaderIcon } from '../components/ui'
 import { ServersCard } from "../components/Servers"
 
 export default function HomePage() {
@@ -56,7 +56,7 @@ export default function HomePage() {
             </div>
             <div className="meta">
               <span className="chip accent">Minecraft {selected.mcVersion}</span>
-              <span className="chip">{loaderLabel(selected.loader)} {selected.loaderVersion || ''}</span>
+              <span className="chip"><LoaderIcon loader={selected.loader} size={13} /> {loaderLabel(selected.loader)} {selected.loaderVersion || ''}</span>
               <span className="chip">
                 <Clock size={11} /> {fmtPlaytime(selected.playTime)}
               </span>
