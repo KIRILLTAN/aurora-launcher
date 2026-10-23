@@ -94,6 +94,9 @@ export const useStore = create<State>((set, get) => ({
   }
 }))
 
+// доступ к состоянию для самопроверки в CI
+;(window as unknown as { __aurora: typeof useStore }).__aurora = useStore
+
 /** Подписка на события main-процесса. Вызывается один раз при старте. */
 export function bindEvents(): () => void {
   const s = useStore

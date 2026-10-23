@@ -1,0 +1,31 @@
+name: Самопроверка (установка и запуск Minecraft)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  selftest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: sudo apt-get update && sudo apt-get install -y xvfb libgl1-mesa-dri mesa-utils imagemagick
+      - run: npm install --no-audit --no-fund
+      - run: npm run build
+      - name: Запуск лаунчера в режиме самопроверки
+        run: |
+          mkdir -p selftest
+          (sleep 600; DISPLAY=:99 import -window root selftest/screen-10min.png || true) &
+          xvfb-run -n 99 -s "-screen 0 1600x1000x24" npx electron . --no-sandbox 2>&1 | tee selftest/electron.log
+        env:
+          AURORA_SELFTEST: ${{ github.workspace }}/selftest
+          LIBGL_ALWAYS_SOFTWARE: '1'
+      - run: cat selftest/result.json || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: selftest
+          path: selftest

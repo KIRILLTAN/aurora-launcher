@@ -18,6 +18,7 @@ import { launchInstance, stopInstance, runningIds, getLog, reinstallInstance } f
 import { askAi } from './crash/ai'
 import { getRemoteInfo, initUpdater, checkForUpdates, installUpdate, getUpdateStatus } from './remote'
 import { withTask, emit } from './events'
+import { runSelfTest } from './selftest'
 
 let win: BrowserWindow | null = null
 
@@ -51,7 +52,8 @@ function createWindow(): void {
   else win.loadFile(path.join(__dirname, '../renderer/index.html'))
 }
 
-type Handler = (...args: never[]) => unknown
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Handler = (...args: any[]) => unknown
 const handlers: Record<string, Handler> = {
   // окно и система
   'app:info': () => ({ version: app.getVersion(), platform: process.platform, arch: process.arch, dataDir: getSettings().dataDir, totalMem: Math.round(os.totalmem() / 1048576) }),
@@ -216,6 +218,11 @@ if (!app.requestSingleInstanceLock()) {
     app.setAppUserModelId('com.kirilltan.aurora')
     dirs.root()
     createWindow()
+    const selftest = process.env['AURORA_SELFTEST']
+    if (selftest && win) {
+      const w = win
+      w.webContents.once('did-finish-load', () => void runSelfTest(w, selftest))
+    }
     initUpdater()
     // первичный поиск Java в фоне
     java.detectJavas().catch(() => undefined)
