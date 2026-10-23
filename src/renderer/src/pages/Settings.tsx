@@ -29,7 +29,7 @@ const OVERLAY_TOGGLES: [keyof OverlayConfig, string][] = [
   ['emergencyTotem', 'Аварийный тотем']
 ]
 
-const DEFAULT_OVERLAY: OverlayConfig = { loot: true, worldIcons: true, radius: 24, arrows: true, coords: false, fps: false, clock: false, armor: true, offhand: true, rightSide: false, maxLines: 8, borderless: true, autoRefill: false, emergencyTotem: false, totemHp: 6 }
+const DEFAULT_OVERLAY: OverlayConfig = { loot: true, worldIcons: true, radius: 24, arrows: true, coords: false, fps: false, clock: false, armor: true, offhand: true, rightSide: false, maxLines: 8, borderless: true, autoRefill: false, emergencyTotem: false, totemHp: 0 }
 
 export default function SettingsPage() {
   const { settings, setSettings, toast, update } = useStore()
@@ -77,7 +77,7 @@ export default function SettingsPage() {
             <div className="text">
               <b>Aurora Helper — оверлей по F6</b>
               <span>
-                Не мод: работает на ванилле и любом загрузчике (Minecraft 1.14.4+, Forge 1.17+). В игре нажмите <span className="kbd">F6</span> — меню, ↑↓ выбор, ←→ изменить. Полный экран помощник сам делает «без рамки», чтобы оверлей был виден. Автоподмена: когда в руке кончился стак, сломался инструмент или броня либо сработал тотем, такая же вещь берётся из инвентаря. Аварийный тотем: когда здоровья мало, тотем из инвентаря сам встаёт в левую руку (на некоторых серверах такое запрещено).
+                Не мод: работает на ванилле и любом загрузчике (Minecraft 1.14.4+, Forge 1.17+). В игре нажмите <span className="kbd">F6</span> — меню, ↑↓ выбор, ←→ изменить. Полный экран помощник сам делает «без рамки», чтобы оверлей был виден. Автоподмена: когда в руке кончился стак, сломался инструмент или броня либо сработал тотем, такая же вещь берётся из инвентаря. Аварийный тотем: прямо перед смертельным ударом, падением или в огне тотем из инвентаря сам встаёт в левую руку, а когда опасность пройдёт — возвращается прежний предмет (на некоторых серверах такое запрещено).
               </span>
             </div>
             <Switch on={settings.helperEnabled} onChange={(v) => patch({ helperEnabled: v })} />
@@ -98,9 +98,10 @@ export default function SettingsPage() {
               </div>
               {overlay.emergencyTotem && (
                 <div className="row" style={{ justifyContent: 'space-between', padding: '6px 2px' }}>
-                  <span className="small">Тотем, когда здоровья</span>
-                  <select className="select" style={{ width: 130, height: 32 }} value={overlay.totemHp} onChange={(e) => patch({ overlay: { ...overlay, totemHp: parseInt(e.target.value) } })}>
-                    {[4, 6, 8, 10, 12].map((h) => <option key={h} value={h}>≤ {h / 2} сердец</option>)}
+                  <span className="small">Когда ставить тотем</span>
+                  <select className="select" style={{ width: 170, height: 32 }} value={overlay.totemHp} onChange={(e) => patch({ overlay: { ...overlay, totemHp: parseInt(e.target.value) } })}>
+                    <option value={0}>перед смертью (умно)</option>
+                    {[4, 6, 8, 10].map((h) => <option key={h} value={h}>≤ {h / 2} сердец</option>)}
                   </select>
                 </div>
               )}

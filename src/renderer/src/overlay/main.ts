@@ -329,6 +329,10 @@ function render(): void {
     const c = cfg
     parts.push(`<div class="menu"><div class="mtitle">✦ Aurora Helper ✦</div><div class="mhint">F6 или Esc — закрыть · ↑↓ выбор · ←→/Enter изменить</div>${menu.items.map((it, i) => {
       if (it.key === 'close') return `<div class="mi close${i === menu!.index ? ' sel' : ''}"><span>${it.label}</span><span class="dim">Enter</span></div>`
+      if (it.key === 'totemHp') {
+        const hp = c.totemHp
+        return `<div class="mi${i === menu!.index ? ' sel' : ''}"><span>${it.label}</span><span class="accent">${hp ? '≤ ' + hp / 2 + ' ❤' : 'перед смертью'}</span></div>`
+      }
       const v = c[it.key]
       const val = typeof v === 'boolean' ? (v ? '<span class="ok">ВКЛ</span>' : '<span class="dim">выкл</span>') : `<span class="accent">${v}</span>`
       return `<div class="mi${i === menu!.index ? ' sel' : ''}"><span>${it.label}</span>${val}</div>`

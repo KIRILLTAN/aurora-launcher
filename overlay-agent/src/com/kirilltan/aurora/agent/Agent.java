@@ -48,7 +48,8 @@ public final class Agent {
     static volatile boolean refillOn;
     /** аварийный тотем: при здоровье не выше порога тотем из инвентаря ставится в левую руку */
     static volatile boolean totemOn;
-    static volatile double totemHp = 6;
+    /** 0 — «перед смертью» (по угрозе), иначе порог здоровья в HP */
+    static volatile double totemHp = 0;
 
     public static void premain(String args, Instrumentation instrumentation) {
         inst = instrumentation;
@@ -377,6 +378,7 @@ public final class Agent {
                     if (line.contains("\"borderless\":")) borderlessOn = line.contains("\"borderless\":true") && !mac;
                     if (line.contains("\"refill\":")) refillOn = line.contains("\"refill\":true");
                     if (line.contains("\"totem\":")) totemOn = line.contains("\"totem\":true");
+                    if (!totemOn) Refill.restoreSlot = -1;
                     java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"totemHp\":([0-9.]+)").matcher(line);
                     if (m.find()) totemHp = Double.parseDouble(m.group(1));
                 }
@@ -462,6 +464,8 @@ public final class Agent {
         double pz = num(call(player, ENTITY, "getZ"));
         Object yaw = call(player, ENTITY, "getYRot");
         if (yaw == null) yaw = get(player, ENTITY, "yRot");
+        double health = num(call(player, LIVING, "getHealth"));
+        if (!Double.isNaN(health)) sb.append(",\"hp\":").append(fmt(health));
         sb.append(",\"pos\":[").append(fmt(px)).append(',').append(fmt(py)).append(',').append(fmt(pz)).append(',').append(fmt(num(yaw))).append(']');
         Object time = call(level, LEVEL, "getDayTime");
         if (time != null) sb.append(",\"time\":").append(fmt(num(time)));
@@ -498,7 +502,8 @@ public final class Agent {
         stack(sb, call(player, LIVING, "getOffhandItem"));
 
         // автоподмена предметов — тоже на потоке игры, ~30 раз в секунду
-        if ((refillOn || totemOn) && snapCount % 2 == 0) {
+        // с аварийным тотемом — каждый кадр: важна каждая доля секунды
+        if ((refillOn && snapCount % 2 == 0) || totemOn) {
             try {
                 Refill.tick(mc, player, screen != null);
             } catch (Throwable e) {
@@ -599,6 +604,35 @@ public final class Agent {
         private static Object lastMain, lastOff;
         private static final Object[] lastArmor = new Object[4];
         private static long cooldownUntil;
+        // здоровье и недавние удары — чтобы понять, что следующий удар смертелен
+        private static double prevHp = -1;
+        private static final long[] hitAt = new long[8];
+        private static final double[] hitDmg = new double[8];
+        private static int hitIdx;
+        private static long lastDamageAt;
+        private static long lastDangerAt;
+        // что лежало в левой руке до аварийного тотема — вернём, когда опасность пройдёт
+        private static int restoreSlot = -1;
+        private static Object restoreItem;
+
+        private static double recentMaxHit(long now) {
+            double m = 0;
+            for (int i = 0; i < hitAt.length; i++) if (now - hitAt[i] < 4000) m = Math.max(m, hitDmg[i]);
+            return m;
+        }
+
+        /** Причина поставить тотем прямо сейчас или null, если смерть не грозит. */
+        private static String danger(Object player, double hp, long now) {
+            if (!(hp > 0)) return null;
+            if (totemHp > 0) return hp <= totemHp ? "здоровье " + (int) Math.ceil(hp) + " HP" : null;
+            if (hp <= 2) return "почти нет здоровья";
+            double hit = recentMaxHit(now);
+            if (hit > 0 && hp <= hit + 0.5) return "следующий удар смертелен";
+            double fall = num(get(player, ENTITY, "fallDistance"));
+            if (fall > 3 && fall - 3 >= hp - 0.5) return "смертельное падение";
+            if (hp <= 6 && (Boolean.TRUE.equals(call(player, ENTITY, "isInLava")) || Boolean.TRUE.equals(call(player, ENTITY, "isOnFire")))) return "огонь";
+            return null;
+        }
         private static final String[] GET_INVENTORY = {"getInventory"};
         private static final String[] GET_SELECTED = {"getSelectedSlot"};
 
@@ -697,17 +731,40 @@ public final class Agent {
             boolean ownInventory = !screenOpen || (open != null && open == get(player, PLAYER, "inventoryMenu"));
             long now = System.currentTimeMillis();
             boolean acted = false;
+            double hp = num(call(player, LIVING, "getHealth"));
+            if (prevHp >= 0 && hp < prevHp - 0.01) {
+                hitAt[hitIdx] = now;
+                hitDmg[hitIdx] = prevHp - hp;
+                hitIdx = (hitIdx + 1) % hitAt.length;
+                lastDamageAt = now;
+            }
+            prevHp = hp;
+            String why = totemOn ? danger(player, hp, now) : null;
+            if (why != null) lastDangerAt = now;
             if (ownInventory && now >= cooldownUntil) {
-                // аварийный тотем: мало здоровья, а тотема в руках нет — ставим в левую руку (что там было — уходит на место тотема)
+                // аварийный тотем: смерть близко, а тотема в руках нет — ставим в левую руку (что там было — уходит на место тотема)
                 if (totemOn && !isTotem(off) && !isTotem(main)) {
-                    double hp = num(call(player, LIVING, "getHealth"));
-                    if (hp > 0 && hp <= totemHp) {
+                    if (why != null) {
                         int from = findTotem(inv);
                         if (from >= 0 && click(mc, player, menuSlot(from), 40, "SWAP")) {
-                            last = "аварийный тотем (" + (int) Math.ceil(hp) + " HP)";
+                            last = "тотем: " + why;
+                            // запоминаем самый первый предмет за эпизод опасности (после сработавшего тотема рука уже пустая)
+                            if (restoreSlot < 0) {
+                                restoreSlot = from;
+                                restoreItem = off;
+                            }
                             acted = true;
                         }
                     }
+                }
+                // опасность прошла (здоровье восстановилось, урона давно не было) — возвращаем прежний предмет
+                if (!acted && totemOn && restoreSlot >= 0 && isTotem(off) && hp >= 14 && now - lastDamageAt > 6000 && now - lastDangerAt > 5000) {
+                    if (itemOf(call(inv, INVENTORY, "getItem", restoreSlot)) == restoreItem && click(mc, player, menuSlot(restoreSlot), 40, "SWAP")) {
+                        last = "опасность прошла" + (restoreItem != null ? ": вернул " + name(restoreItem) : "");
+                        acted = true;
+                    }
+                    restoreSlot = -1;
+                    restoreItem = null;
                 }
                 // сработал тотем — новый в левую руку, даже в открытом инвентаре
                 if (!acted && refillOn && isTotem(lastOff) && off == null) {

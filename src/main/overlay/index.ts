@@ -35,7 +35,7 @@ export const DEFAULT_OVERLAY: OverlayConfig = {
   borderless: true,
   autoRefill: false,
   emergencyTotem: false,
-  totemHp: 6
+  totemHp: 0
 }
 
 interface Session {
@@ -306,8 +306,8 @@ const MENU: { key: MenuKey; label: string; values?: number[] }[] = [
   { key: 'armor', label: 'HUD брони (справа)' },
   { key: 'offhand', label: 'Предметы в руках и прочность (слева)' },
   { key: 'autoRefill', label: 'Автоподмена предметов' },
-  { key: 'emergencyTotem', label: 'Аварийный тотем (мало здоровья)' },
-  { key: 'totemHp', label: 'Порог здоровья для тотема, HP', values: [4, 6, 8, 10, 12] },
+  { key: 'emergencyTotem', label: 'Аварийный тотем' },
+  { key: 'totemHp', label: 'Когда ставить тотем', values: [0, 4, 6, 8, 10] },
   { key: 'coords', label: 'Координаты' },
   { key: 'fps', label: 'FPS' },
   { key: 'clock', label: 'Часы' },
