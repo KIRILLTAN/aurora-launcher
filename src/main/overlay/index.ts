@@ -314,8 +314,7 @@ const MENU: { key: MenuKey; label: string; values?: number[] }[] = [
 /** Настройки, которые нужны самому агенту в игре (полный экран, автоподмена) — меняются на лету. */
 function sendAgentConfig(s: Session): void {
   const cfg = overlayConfig()
-  if (s.socket && !s.socket.destroyed) s.socket.write(JSON.stringify({ borderless: cfg.borderless, refill: cfg.autoRefill }) + '
-')
+  if (s.socket && !s.socket.destroyed) s.socket.write(JSON.stringify({ borderless: cfg.borderless, refill: cfg.autoRefill }) + '\n')
 }
 
 /** Настройки помощника изменились в лаунчере — обновляем оверлей и агента. */
