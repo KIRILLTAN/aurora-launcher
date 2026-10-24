@@ -283,6 +283,12 @@ public final class Agent {
     static final String SLOT = "net.minecraft.world.entity.EquipmentSlot";
     static final String GUI = "net.minecraft.client.gui.Gui";
     static final String ITEM = "net.minecraft.world.item.Item";
+    // то, что убивает с одного раза: аварийный тотем ставим заранее
+    static final String PRIMED_TNT = "net.minecraft.world.entity.item.PrimedTnt";
+    static final String MINECART_TNT = "net.minecraft.world.entity.vehicle.MinecartTNT";
+    static final String CREEPER = "net.minecraft.world.entity.monster.Creeper";
+    static final String END_CRYSTAL = "net.minecraft.world.entity.boss.enderdragon.EndCrystal";
+    static final String WARDEN = "net.minecraft.world.entity.monster.warden.Warden";
 
     // ---------------- Главный цикл ----------------
 
@@ -379,7 +385,7 @@ public final class Agent {
                     if (line.contains("\"refill\":")) refillOn = line.contains("\"refill\":true");
                     if (line.contains("\"totem\":")) totemOn = line.contains("\"totem\":true");
                     if (!totemOn) Refill.restoreSlot = -1;
-                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"totemHp\":([0-9.]+)").matcher(line);
+                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"totemHp\":(-?[0-9.]+)").matcher(line);
                     if (m.find()) totemHp = Double.parseDouble(m.group(1));
                 }
             } catch (Throwable ignored) {
@@ -500,6 +506,14 @@ public final class Agent {
         stack(sb, call(player, LIVING, "getMainHandItem"));
         sb.append(",\"off\":");
         stack(sb, call(player, LIVING, "getOffhandItem"));
+
+        // угрозы рядом (TNT, крипер, кристалл…) — для аварийного тотема
+        if (totemOn && snapCount % 2 == 0) {
+            try {
+                Refill.scanThreats(level, px, py, pz);
+            } catch (Throwable ignored) {
+            }
+        }
 
         // автоподмена предметов — тоже на потоке игры, ~30 раз в секунду
         // с аварийным тотемом — каждый кадр: важна каждая доля секунды
@@ -622,12 +636,60 @@ public final class Agent {
         }
 
         /** Причина поставить тотем прямо сейчас или null, если смерть не грозит. */
+        static volatile String threat;
+        static volatile long threatAt;
+
+        /** Взрывы и прочее, что убивает с полного здоровья: замечаем заранее по сущностям рядом. */
+        static void scanThreats(Object level, double px, double py, double pz) {
+            Object ents = call(level, CLEVEL, "entitiesForRendering");
+            if (!(ents instanceof Iterable)) return;
+            Class<?> tnt = cls(PRIMED_TNT), cart = cls(MINECART_TNT), creeper = cls(CREEPER), crystal = cls(END_CRYSTAL), warden = cls(WARDEN);
+            String found = null;
+            try {
+                for (Object e : (Iterable<?>) ents) {
+                    Class<?> c = e.getClass();
+                    boolean isTnt = tnt != null && tnt.isAssignableFrom(c), isCart = cart != null && cart.isAssignableFrom(c);
+                    boolean isCreeper = creeper != null && creeper.isAssignableFrom(c), isCrystal = crystal != null && crystal.isAssignableFrom(c);
+                    boolean isWarden = warden != null && warden.isAssignableFrom(c);
+                    if (!isTnt && !isCart && !isCreeper && !isCrystal && !isWarden) continue;
+                    double x = num(call(e, ENTITY, "getX")) - px, y = num(call(e, ENTITY, "getY")) - py, z = num(call(e, ENTITY, "getZ")) - pz;
+                    double d2 = x * x + y * y + z * z;
+                    if (isTnt && d2 <= 10 * 10) found = "TNT рядом";
+                    else if (isCart && d2 <= 8 * 8) found = "вагонетка с TNT";
+                    else if (isCrystal && d2 <= 12 * 12) found = "кристалл Края";
+                    else if (isWarden && d2 <= 14 * 14) found = "хранитель";
+                    else if (isCreeper && d2 <= 7 * 7) {
+                        // шипит (взводится) — вот-вот взорвётся
+                        double swell = num(call(e, CREEPER, "getSwelling", 1.0f));
+                        if (swell > 0.01 || d2 <= 3 * 3) found = "крипер";
+                    }
+                    if (found != null) break;
+                }
+            } catch (Throwable ignored) {
+                // список сущностей изменился во время обхода
+            }
+            if (found != null) {
+                threat = found;
+                threatAt = System.currentTimeMillis();
+            }
+        }
+
+        private static double maxHitWithin(long now, long ms) {
+            double m = 0;
+            for (int i = 0; i < hitAt.length; i++) if (now - hitAt[i] < ms) m = Math.max(m, hitDmg[i]);
+            return m;
+        }
+
         private static String danger(Object player, double hp, long now) {
             if (!(hp > 0)) return null;
+            if (totemHp < 0) return "всегда в руке";
             if (totemHp > 0) return hp <= totemHp ? "здоровье " + (int) Math.ceil(hp) + " HP" : null;
             if (hp <= 2) return "почти нет здоровья";
+            if (now - threatAt < 600 && threat != null) return threat;
             double hit = recentMaxHit(now);
             if (hit > 0 && hp <= hit + 0.5) return "следующий удар смертелен";
+            // тяжёлый бой: недавно прилетело 6+ HP за удар — следующий может быть смертельным
+            if (maxHitWithin(now, 10000) >= 6) return "тяжёлый бой";
             double fall = num(get(player, ENTITY, "fallDistance"));
             if (fall > 3 && fall - 3 >= hp - 0.5) return "смертельное падение";
             if (hp <= 6 && (Boolean.TRUE.equals(call(player, ENTITY, "isInLava")) || Boolean.TRUE.equals(call(player, ENTITY, "isOnFire")))) return "огонь";

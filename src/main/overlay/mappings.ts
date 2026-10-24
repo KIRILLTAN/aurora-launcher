@@ -41,7 +41,12 @@ const C = {
   MENU: 'net.minecraft.world.inventory.AbstractContainerMenu',
   CLICK_TYPE: 'net.minecraft.world.inventory.ClickType',
   GAME_MODE: 'net.minecraft.client.multiplayer.MultiPlayerGameMode',
-  ITEM: 'net.minecraft.world.item.Item'
+  ITEM: 'net.minecraft.world.item.Item',
+  PRIMED_TNT: 'net.minecraft.world.entity.item.PrimedTnt',
+  MINECART_TNT: 'net.minecraft.world.entity.vehicle.MinecartTNT',
+  CREEPER: 'net.minecraft.world.entity.monster.Creeper',
+  END_CRYSTAL: 'net.minecraft.world.entity.boss.enderdragon.EndCrystal',
+  WARDEN: 'net.minecraft.world.entity.monster.warden.Warden'
 }
 
 const NEEDS: Need[] = [
@@ -111,6 +116,12 @@ const NEEDS: Need[] = [
   { cls: C.ENTITY, name: 'fallDistance', field: true },
   { cls: C.ENTITY, name: 'isOnFire', argc: 0 },
   { cls: C.ENTITY, name: 'isInLava', argc: 0 },
+  // классы-угрозы (имя класса попадает в файл вместе с любым его членом)
+  { cls: C.PRIMED_TNT, name: 'getFuse', argc: 0 },
+  { cls: C.MINECART_TNT, name: 'getFuse', argc: 0 },
+  { cls: C.CREEPER, name: 'getSwelling', argc: 1 },
+  { cls: C.END_CRYSTAL, name: 'getBeamTarget', argc: 0 },
+  { cls: C.WARDEN, name: 'getClientAngerLevel', argc: 0 },
   { cls: C.INVENTORY, name: 'selected', field: true },
   { cls: C.INVENTORY, name: 'getSelectedSlot', argc: 0 },
   { cls: C.INVENTORY, name: 'getItem', argc: 1 },
@@ -257,7 +268,7 @@ function findLibrary(prefix: string[], fileRe: RegExp): string | null {
 export async function buildOverlayMappings(inst: Instance, v: ResolvedVersion): Promise<{ file: string; ns: Namespace } | null> {
   const ns = overlayNamespace(inst, v)
   if (!ns) return null
-  const out = path.join(ensureDir(path.join(dirs.cache(), 'overlay')), `${v.id}-${ns}-v6.tsv`)
+  const out = path.join(ensureDir(path.join(dirs.cache(), 'overlay')), `${v.id}-${ns}-v7.tsv`)
   if (exists(out)) return { file: out, ns }
 
   const lines: string[] = []

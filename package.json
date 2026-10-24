@@ -1,7 +1,7 @@
 {
   "name": "aurora-launcher",
   "productName": "Aurora Launcher",
-  "version": "1.3.7",
+  "version": "1.3.8",
   "description": "Aurora Launcher — красивый лаунчер Minecraft: сборки, моды, Java-менеджер, редактор скинов и ИИ-анализ крашей",
   "main": "./out/main/index.js",
   "author": "KIRILLTAN",

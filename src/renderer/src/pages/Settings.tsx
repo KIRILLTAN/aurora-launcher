@@ -101,6 +101,7 @@ export default function SettingsPage() {
                   <span className="small">Когда ставить тотем</span>
                   <select className="select" style={{ width: 170, height: 32 }} value={overlay.totemHp} onChange={(e) => patch({ overlay: { ...overlay, totemHp: parseInt(e.target.value) } })}>
                     <option value={0}>перед смертью (умно)</option>
+                    <option value={-1}>всегда в руке</option>
                     {[4, 6, 8, 10].map((h) => <option key={h} value={h}>≤ {h / 2} сердец</option>)}
                   </select>
                 </div>

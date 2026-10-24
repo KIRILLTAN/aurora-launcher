@@ -307,7 +307,7 @@ const MENU: { key: MenuKey; label: string; values?: number[] }[] = [
   { key: 'offhand', label: 'Предметы в руках и прочность (слева)' },
   { key: 'autoRefill', label: 'Автоподмена предметов' },
   { key: 'emergencyTotem', label: 'Аварийный тотем' },
-  { key: 'totemHp', label: 'Когда ставить тотем', values: [0, 4, 6, 8, 10] },
+  { key: 'totemHp', label: 'Когда ставить тотем', values: [0, -1, 4, 6, 8, 10] },
   { key: 'coords', label: 'Координаты' },
   { key: 'fps', label: 'FPS' },
   { key: 'clock', label: 'Часы' },

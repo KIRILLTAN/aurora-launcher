@@ -49,14 +49,27 @@ let scheduled = false
 const icons = new Map<string, string>()
 const pending = new Set<string>()
 
+let lastDataAt = 0
 window.aurora.on('overlay:data', (line) => {
   try {
     snap = JSON.parse(line as string) as Snap
   } catch {
+    window.aurora.overlayAck()
     return
   }
-  schedule()
+  lastDataAt = performance.now()
+  // рисуем сразу, не дожидаясь кадра: Windows может притормаживать requestAnimationFrame у окна поверх игры
+  scheduled = false
+  render()
+  window.aurora.overlayAck()
 })
+
+// сторож: если свежих данных нет (игра подвисла, окно свернули), метки над лутом прячем,
+// а не оставляем висеть на старом месте экрана
+setInterval(() => {
+  if (performance.now() - lastDataAt < 300) return
+  for (const el of pool) if (el.style.display !== 'none') el.style.display = 'none'
+}, 100)
 window.aurora.on('overlay:config', (p) => {
   const payload = p as { config: OverlayConfig; menu: MenuState | null }
   cfg = payload.config
@@ -331,7 +344,7 @@ function render(): void {
       if (it.key === 'close') return `<div class="mi close${i === menu!.index ? ' sel' : ''}"><span>${it.label}</span><span class="dim">Enter</span></div>`
       if (it.key === 'totemHp') {
         const hp = c.totemHp
-        return `<div class="mi${i === menu!.index ? ' sel' : ''}"><span>${it.label}</span><span class="accent">${hp ? '≤ ' + hp / 2 + ' ❤' : 'перед смертью'}</span></div>`
+        return `<div class="mi${i === menu!.index ? ' sel' : ''}"><span>${it.label}</span><span class="accent">${hp > 0 ? '≤ ' + hp / 2 + ' ❤' : hp < 0 ? 'всегда в руке' : 'перед смертью'}</span></div>`
       }
       const v = c[it.key]
       const val = typeof v === 'boolean' ? (v ? '<span class="ok">ВКЛ</span>' : '<span class="dim">выкл</span>') : `<span class="accent">${v}</span>`
