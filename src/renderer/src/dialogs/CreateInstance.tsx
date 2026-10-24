@@ -15,7 +15,7 @@ export default function CreateInstanceDialog() {
   const [versions, setVersions] = useState<McVersion[] | null>(null)
   const [vErr, setVErr] = useState<string>()
   const [filter, setFilter] = useState<'release' | 'snapshot' | 'old' | 'all'>('release')
-  const [clean, setClean] = useState(false)
+  const [clean, setClean] = useState(true)
   const [q, setQ] = useState('')
   const [mc, setMc] = useState<string>()
   const [loader, setLoader] = useState<LoaderType>('vanilla')

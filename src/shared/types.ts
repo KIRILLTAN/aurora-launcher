@@ -74,6 +74,8 @@ export interface Settings {
   animations: 'full' | 'reduced'
   /** автоподбор памяти по числу модов и ОЗУ */
   memoryAuto: boolean
+  /** выполненные разовые миграции настроек */
+  migrations?: string[]
   /** профиль JVM: оптимизированный G1, ZGC (Java 21+) или только свои аргументы */
   jvmPreset: 'g1' | 'zgc' | 'custom'
   /** повышенный приоритет процесса игры */

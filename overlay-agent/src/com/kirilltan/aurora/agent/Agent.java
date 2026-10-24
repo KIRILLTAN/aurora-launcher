@@ -643,6 +643,12 @@ public final class Agent {
         static volatile long threatAt;
         /** угроза — взрывчатка (TNT, вагонетка с TNT): тотем нужен в обеих руках */
         static volatile boolean threatExplosive;
+        /** когда рядом последний раз было что-то взрывающееся — урон сразу после этого считаем взрывом, а не боем */
+        static volatile long lastBlastAt;
+        private static long lastHighFallAt;
+        /** вид последней опасности: от него зависит, как скоро убрать тотем ("blast" — 2 с, "fall" — 1 с) */
+        private static String lastDangerKind = "other";
+        private static String pendingKind = "other";
 
         /** Взрывы и прочее, что убивает с полного здоровья: замечаем заранее по сущностям рядом. */
         static void scanThreats(Object level, double px, double py, double pz) {
@@ -677,6 +683,7 @@ public final class Agent {
                 threat = found;
                 threatAt = System.currentTimeMillis();
                 threatExplosive = found.contains("TNT");
+                if (!found.equals("хранитель")) lastBlastAt = threatAt;
             }
         }
 
@@ -690,14 +697,22 @@ public final class Agent {
             if (!(hp > 0)) return null;
             if (totemHp < 0) return "всегда в руке";
             if (totemHp > 0) return hp <= totemHp ? "здоровье " + (int) Math.ceil(hp) + " HP" : null;
+            // сразу после взрыва или падения здоровье может на миг упасть до 1 — это тот же эпизод
+            pendingKind = now - lastBlastAt < 1500 ? "blast" : now - lastHighFallAt < 800 ? "fall" : "other";
             if (hp <= 2) return "почти нет здоровья";
-            if (now - threatAt < 600 && threat != null) return threat;
+            if (now - threatAt < 600 && threat != null) {
+                pendingKind = threat.equals("хранитель") ? "other" : "blast";
+                return threat;
+            }
             double hit = recentMaxHit(now);
             if (hit > 0 && hp <= hit + 0.5) return "следующий удар смертелен";
             // тяжёлый бой: недавно прилетело 6+ HP за удар — следующий может быть смертельным
             if (maxHitWithin(now, 10000) >= 6) return "тяжёлый бой";
             double fall = num(get(player, ENTITY, "fallDistance"));
-            if (fall > 3 && fall - 3 >= hp - 0.5) return "смертельное падение";
+            if (fall > 3 && fall - 3 >= hp - 0.5) {
+                pendingKind = "fall";
+                return "смертельное падение";
+            }
             if (hp <= 6 && (Boolean.TRUE.equals(call(player, ENTITY, "isInLava")) || Boolean.TRUE.equals(call(player, ENTITY, "isOnFire")))) return "огонь";
             return null;
         }
@@ -803,16 +818,29 @@ public final class Agent {
             boolean ownInventory = !screenOpen || (open != null && open == get(player, PLAYER, "inventoryMenu"));
             long now = System.currentTimeMillis();
             boolean acted = false;
-            double hp = num(call(player, LIVING, "getHealth"));
-            if (prevHp >= 0 && hp < prevHp - 0.01) {
-                hitAt[hitIdx] = now;
-                hitDmg[hitIdx] = prevHp - hp;
-                hitIdx = (hitIdx + 1) % hitAt.length;
+            // здоровье вместе с поглощением (после тотема — 1 HP, но 8 HP поглощения)
+            double absorption = num(call(player, LIVING, "getAbsorptionAmount"));
+            double hp = num(call(player, LIVING, "getHealth")) + (absorption > 0 ? absorption : 0);
+            if (num(get(player, ENTITY, "fallDistance")) > 3) lastHighFallAt = now;
+            // настоящий урон — когда игрок «мигает красным»; конец поглощения после тотема — не удар
+            Object hurtTime = get(player, LIVING, "hurtTime");
+            boolean hurt = !(hurtTime instanceof Integer) || (Integer) hurtTime > 0;
+            if (prevHp >= 0 && hp < prevHp - 0.01 && hurt) {
                 lastDamageAt = now;
+                // урон от взрыва и падения — не бой: после них тотем не нужно держать «на всякий случай»
+                boolean blast = now - lastBlastAt < 1500, fallHit = now - lastHighFallAt < 800;
+                if (!blast && !fallHit) {
+                    hitAt[hitIdx] = now;
+                    hitDmg[hitIdx] = prevHp - hp;
+                    hitIdx = (hitIdx + 1) % hitAt.length;
+                }
             }
             prevHp = hp;
             String why = totemOn ? danger(player, hp, now) : null;
-            if (why != null) lastDangerAt = now;
+            if (why != null) {
+                lastDangerAt = now;
+                lastDangerKind = pendingKind;
+            }
             // тотемы — без пауз: при серии взрывов следующий должен встать в тот же кадр
             if (ownInventory) {
                 boolean offTotem = isTotem(off), mainTotem = isTotem(main);
@@ -862,7 +890,9 @@ public final class Agent {
                     }
                 }
                 // опасность прошла (здоровье восстановилось, урона и угроз давно не было) — возвращаем прежние предметы
-                boolean safe = hp >= 14 && now - lastDamageAt > 6000 && now - lastDangerAt > 5000;
+                // опасность прошла: после взрыва тотем уходит через 2 с, после падения — через 1 с, в остальных случаях — через 3 с
+                long delay = "blast".equals(lastDangerKind) ? 2000 : "fall".equals(lastDangerKind) ? 1000 : 3000;
+                boolean safe = why == null && now - lastDangerAt > delay;
                 if (!acted && totemOn && safe && restoreSlot >= 0) {
                     if (offTotem && itemOf(call(inv, INVENTORY, "getItem", restoreSlot)) == restoreItem && click(mc, player, menuSlot(restoreSlot), 40, "SWAP")) {
                         last = "опасность прошла" + (restoreItem != null ? ": вернул " + name(restoreItem) : "");

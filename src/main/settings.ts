@@ -31,7 +31,7 @@ function defaults(): Settings {
     githubClientId: '',
     servers: [],
     animations: 'full',
-    memoryAuto: true,
+    memoryAuto: false,
     jvmPreset: 'g1',
     highPriority: true,
     mirrors: 'auto'
@@ -45,6 +45,13 @@ export function getSettings(): Settings {
   if (!cache) {
     cache = { ...defaults(), ...readJson<Partial<Settings>>(file(), {}) }
     if (cache.jvmArgs === LEGACY_JVM) cache.jvmArgs = ''
+    // разовые изменения значений по умолчанию для уже сохранённых настроек
+    const done = cache.migrations || []
+    if (!done.includes('memory-auto-off')) {
+      cache.memoryAuto = false
+      cache.migrations = [...done, 'memory-auto-off']
+      writeJson(file(), cache)
+    }
   }
   return cache
 }
