@@ -50,6 +50,8 @@ public final class Agent {
     static volatile boolean totemOn;
     /** 0 — «перед смертью» (по угрозе), иначе порог здоровья в HP */
     static volatile double totemHp = 0;
+    /** при TNT рядом — тотем и в правую руку: игра проверяет обе руки, так переживаются два взрыва подряд */
+    static volatile boolean totemBoth = true;
 
     public static void premain(String args, Instrumentation instrumentation) {
         inst = instrumentation;
@@ -385,6 +387,7 @@ public final class Agent {
                     if (line.contains("\"refill\":")) refillOn = line.contains("\"refill\":true");
                     if (line.contains("\"totem\":")) totemOn = line.contains("\"totem\":true");
                     if (!totemOn) Refill.restoreSlot = -1;
+                    if (line.contains("\"totemBoth\":")) totemBoth = line.contains("\"totemBoth\":true");
                     java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"totemHp\":(-?[0-9.]+)").matcher(line);
                     if (m.find()) totemHp = Double.parseDouble(m.group(1));
                 }
@@ -638,6 +641,8 @@ public final class Agent {
         /** Причина поставить тотем прямо сейчас или null, если смерть не грозит. */
         static volatile String threat;
         static volatile long threatAt;
+        /** угроза — взрывчатка (TNT, вагонетка с TNT): тотем нужен в обеих руках */
+        static volatile boolean threatExplosive;
 
         /** Взрывы и прочее, что убивает с полного здоровья: замечаем заранее по сущностям рядом. */
         static void scanThreats(Object level, double px, double py, double pz) {
@@ -671,6 +676,7 @@ public final class Agent {
             if (found != null) {
                 threat = found;
                 threatAt = System.currentTimeMillis();
+                threatExplosive = found.contains("TNT");
             }
         }
 
@@ -770,11 +776,15 @@ public final class Agent {
         }
 
         /** Тотем в инвентаре: сначала рюкзак, потом хотбар. */
-        private static int findTotem(Object inv) {
+        private static int findTotem(Object inv, int skip) {
             for (int i = 9; i < 36; i++) if (isTotem(itemOf(call(inv, INVENTORY, "getItem", i)))) return i;
-            for (int i = 0; i < 9; i++) if (isTotem(itemOf(call(inv, INVENTORY, "getItem", i)))) return i;
+            for (int i = 0; i < 9; i++) if (i != skip && isTotem(itemOf(call(inv, INVENTORY, "getItem", i)))) return i;
             return -1;
         }
+
+        // что было в правой руке до тотема (при TNT) — вернём, когда опасность пройдёт
+        private static int mainRestoreSlot = -1, mainRestoreHotbar = -1;
+        private static Object mainRestoreItem;
 
         static void tick(Object mc, Object player, boolean screenOpen) {
             Object inv = inventory(player);
@@ -803,38 +813,74 @@ public final class Agent {
             prevHp = hp;
             String why = totemOn ? danger(player, hp, now) : null;
             if (why != null) lastDangerAt = now;
-            if (ownInventory && now >= cooldownUntil) {
-                // аварийный тотем: смерть близко, а тотема в руках нет — ставим в левую руку (что там было — уходит на место тотема)
-                if (totemOn && !isTotem(off) && !isTotem(main)) {
-                    if (why != null) {
-                        int from = findTotem(inv);
-                        if (from >= 0 && click(mc, player, menuSlot(from), 40, "SWAP")) {
-                            last = "тотем: " + why;
-                            // запоминаем самый первый предмет за эпизод опасности (после сработавшего тотема рука уже пустая)
-                            if (restoreSlot < 0) {
-                                restoreSlot = from;
-                                restoreItem = off;
-                            }
-                            acted = true;
+            // тотемы — без пауз: при серии взрывов следующий должен встать в тот же кадр
+            if (ownInventory) {
+                boolean offTotem = isTotem(off), mainTotem = isTotem(main);
+                // аварийный тотем в левую руку (что там было — уходит на место тотема)
+                if (totemOn && why != null && !offTotem) {
+                    int from = findTotem(inv, sel);
+                    if (from >= 0 && click(mc, player, menuSlot(from), 40, "SWAP")) {
+                        last = "тотем: " + why;
+                        // запоминаем самый первый предмет за эпизод опасности (после сработавшего тотема рука уже пустая)
+                        if (restoreSlot < 0) {
+                            restoreSlot = from;
+                            restoreItem = off;
                         }
+                        offTotem = true;
+                        acted = true;
+                    }
+                } else if (refillOn && !offTotem && off == null && isTotem(lastOff)) {
+                    // сработал тотем — новый в левую руку, даже в открытом инвентаре
+                    int from = findTotem(inv, sel);
+                    if (from >= 0 && click(mc, player, menuSlot(from), 40, "SWAP")) {
+                        last = "в левую руку: " + name(lastOff);
+                        offTotem = true;
+                        acted = true;
                     }
                 }
-                // опасность прошла (здоровье восстановилось, урона давно не было) — возвращаем прежний предмет
-                if (!acted && totemOn && restoreSlot >= 0 && isTotem(off) && hp >= 14 && now - lastDamageAt > 6000 && now - lastDangerAt > 5000) {
-                    if (itemOf(call(inv, INVENTORY, "getItem", restoreSlot)) == restoreItem && click(mc, player, menuSlot(restoreSlot), 40, "SWAP")) {
+                // сработал тотем в правой руке — сразу следующий в тот же слот
+                if ((totemOn || refillOn) && sel >= 0 && sel == lastSel && main == null && isTotem(lastMain)) {
+                    int from = findTotem(inv, sel);
+                    if (from >= 0 && click(mc, player, menuSlot(from), sel, "SWAP")) {
+                        last = "в правую руку: тотем";
+                        mainTotem = true;
+                        acted = true;
+                    }
+                }
+                // много TNT рядом — тотем и в правую руку: игра проверяет обе руки
+                boolean explosive = threatExplosive && now - threatAt < 600;
+                if (totemOn && totemBoth && explosive && sel >= 0 && !mainTotem) {
+                    int from = findTotem(inv, sel);
+                    if (from >= 0 && click(mc, player, menuSlot(from), sel, "SWAP")) {
+                        last = "тотемы в обе руки: " + why;
+                        if (mainRestoreSlot < 0) {
+                            mainRestoreSlot = from;
+                            mainRestoreHotbar = sel;
+                            mainRestoreItem = main;
+                        }
+                        acted = true;
+                    }
+                }
+                // опасность прошла (здоровье восстановилось, урона и угроз давно не было) — возвращаем прежние предметы
+                boolean safe = hp >= 14 && now - lastDamageAt > 6000 && now - lastDangerAt > 5000;
+                if (!acted && totemOn && safe && restoreSlot >= 0) {
+                    if (offTotem && itemOf(call(inv, INVENTORY, "getItem", restoreSlot)) == restoreItem && click(mc, player, menuSlot(restoreSlot), 40, "SWAP")) {
                         last = "опасность прошла" + (restoreItem != null ? ": вернул " + name(restoreItem) : "");
                         acted = true;
                     }
                     restoreSlot = -1;
                     restoreItem = null;
                 }
-                // сработал тотем — новый в левую руку, даже в открытом инвентаре
-                if (!acted && refillOn && isTotem(lastOff) && off == null) {
-                    int from = findTotem(inv);
-                    if (from >= 0 && click(mc, player, menuSlot(from), 40, "SWAP")) {
-                        last = "в левую руку: " + name(lastOff);
+                if (!acted && totemOn && safe && mainRestoreSlot >= 0) {
+                    Object inHotbar = itemOf(call(inv, INVENTORY, "getItem", mainRestoreHotbar));
+                    if (isTotem(inHotbar) && itemOf(call(inv, INVENTORY, "getItem", mainRestoreSlot)) == mainRestoreItem
+                            && click(mc, player, menuSlot(mainRestoreSlot), mainRestoreHotbar, "SWAP")) {
+                        last = "опасность прошла" + (mainRestoreItem != null ? ": в правую руку " + name(mainRestoreItem) : "");
                         acted = true;
                     }
+                    mainRestoreSlot = -1;
+                    mainRestoreHotbar = -1;
+                    mainRestoreItem = null;
                 }
             }
             // остальное — только когда инвентарь закрыт: в нём игрок перекладывает вещи сам
@@ -862,7 +908,7 @@ public final class Agent {
                     }
                 }
             }
-            if (acted) cooldownUntil = now + 150;
+            if (acted) cooldownUntil = now + 100;
             lastSel = sel;
             lastMain = main;
             lastOff = off;

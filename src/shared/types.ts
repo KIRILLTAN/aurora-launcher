@@ -315,6 +315,8 @@ export interface OverlayConfig {
   /** аварийный тотем: при здоровье ≤ totemHp тотем из инвентаря ставится в левую руку */
   emergencyTotem: boolean
   totemHp: number
+  /** при TNT рядом — тотем и в правую руку */
+  totemBoth: boolean
 }
 
 export interface ProxyConfig {

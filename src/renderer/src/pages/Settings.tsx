@@ -26,10 +26,11 @@ const OVERLAY_TOGGLES: [keyof OverlayConfig, string][] = [
   ['rightSide', 'Панель справа'],
   ['borderless', 'Полный экран без рамки'],
   ['autoRefill', 'Автоподмена предметов'],
-  ['emergencyTotem', 'Аварийный тотем']
+  ['emergencyTotem', 'Аварийный тотем'],
+  ['totemBoth', 'Тотем и в правую руку при TNT']
 ]
 
-const DEFAULT_OVERLAY: OverlayConfig = { loot: true, worldIcons: true, radius: 24, arrows: true, coords: false, fps: false, clock: false, armor: true, offhand: true, rightSide: false, maxLines: 8, borderless: true, autoRefill: false, emergencyTotem: false, totemHp: 0 }
+const DEFAULT_OVERLAY: OverlayConfig = { loot: true, worldIcons: true, radius: 24, arrows: true, coords: false, fps: false, clock: false, armor: true, offhand: true, rightSide: false, maxLines: 8, borderless: true, autoRefill: false, emergencyTotem: false, totemHp: 0, totemBoth: true }
 
 export default function SettingsPage() {
   const { settings, setSettings, toast, update } = useStore()
